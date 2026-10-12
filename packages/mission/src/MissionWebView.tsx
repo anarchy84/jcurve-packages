@@ -148,7 +148,17 @@ export function MissionWebView({ url, theme = DEFAULT_THEME, onClose, onEvent, o
       setBuiltInZoomControls={false}
       allowsBackForwardNavigationGestures
       onNavigationStateChange={s => { canGoBack.current = s.canGoBack && !failedRef.current; }}
-      onLoad={() => { disarm(); setState('ok'); onEvent?.('mission_loaded'); }}
+      onLoadStart={() => { failedRef.current = false; if (stateRef.current === 'loading' || stateRef.current === 'ok') arm(); }}
+      // Android 는 네트워크 오류에서도 onLoad 를 먼저 보내고 onError 가 뒤따른다 — 짧게 기다려 오류가 안 왔을 때만 성공으로 센다
+      onLoad={() => {
+        if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+        if (loadedTimer.current) clearTimeout(loadedTimer.current);
+        loadedTimer.current = setTimeout(() => {
+          loadedTimer.current = null;
+          if (failedRef.current) return;
+          setSt('ok'); onEvent?.('mission_loaded');
+        }, 600);
+      }}
       onError={() => fail('error', { why: 'load' })}
       onHttpError={e => {
         const code = e.nativeEvent.statusCode;

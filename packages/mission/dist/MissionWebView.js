@@ -133,7 +133,24 @@ function MissionWebView({ url, theme = states_1.DEFAULT_THEME, onClose, onEvent,
         return (0, jsx_runtime_1.jsx)(states_1.MissionState, { kind: "error", theme: theme, onClose: onClose });
     return (0, jsx_runtime_1.jsxs)(react_native_1.View, { style: { flex: 1, backgroundColor: theme.bg }, children: [(0, jsx_runtime_1.jsx)(WebView, { ref: handle, source: { uri: url }, 
                 // 모든 요청이 onShouldStartLoadWithRequest 를 거치게 한다(비 https 가 라이브러리 기본 처리로 빠져 우리 규칙을 건너뛰지 않게) — 거르는 건 아래 규칙
-                originWhitelist: ['*'], injectedJavaScriptBeforeContentLoaded: shim, injectedJavaScriptBeforeContentLoadedForMainFrameOnly: true, injectedJavaScriptForMainFrameOnly: true, onMessage: onMessage, javaScriptEnabled: true, domStorageEnabled: true, sharedCookiesEnabled: true, thirdPartyCookiesEnabled: true, allowFileAccess: false, allowsInlineMediaPlayback: true, javaScriptCanOpenWindowsAutomatically: false, setSupportMultipleWindows: false, setBuiltInZoomControls: false, allowsBackForwardNavigationGestures: true, onNavigationStateChange: s => { canGoBack.current = s.canGoBack && !failedRef.current; }, onLoad: () => { disarm(); setState('ok'); onEvent?.('mission_loaded'); }, onError: () => fail('error', { why: 'load' }), onHttpError: e => {
+                originWhitelist: ['*'], injectedJavaScriptBeforeContentLoaded: shim, injectedJavaScriptBeforeContentLoadedForMainFrameOnly: true, injectedJavaScriptForMainFrameOnly: true, onMessage: onMessage, javaScriptEnabled: true, domStorageEnabled: true, sharedCookiesEnabled: true, thirdPartyCookiesEnabled: true, allowFileAccess: false, allowsInlineMediaPlayback: true, javaScriptCanOpenWindowsAutomatically: false, setSupportMultipleWindows: false, setBuiltInZoomControls: false, allowsBackForwardNavigationGestures: true, onNavigationStateChange: s => { canGoBack.current = s.canGoBack && !failedRef.current; }, onLoadStart: () => { failedRef.current = false; if (stateRef.current === 'loading' || stateRef.current === 'ok')
+                    arm(); }, 
+                // Android 는 네트워크 오류에서도 onLoad 를 먼저 보내고 onError 가 뒤따른다 — 짧게 기다려 오류가 안 왔을 때만 성공으로 센다
+                onLoad: () => {
+                    if (timer.current) {
+                        clearTimeout(timer.current);
+                        timer.current = null;
+                    }
+                    if (loadedTimer.current)
+                        clearTimeout(loadedTimer.current);
+                    loadedTimer.current = setTimeout(() => {
+                        loadedTimer.current = null;
+                        if (failedRef.current)
+                            return;
+                        setSt('ok');
+                        onEvent?.('mission_loaded');
+                    }, 600);
+                }, onError: () => fail('error', { why: 'load' }), onHttpError: e => {
                     const code = e.nativeEvent.statusCode;
                     if (code === 503)
                         fail('maintenance', { why: 'http', status: code });
