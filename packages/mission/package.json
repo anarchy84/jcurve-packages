@@ -1,0 +1,44 @@
+{
+  "name": "@jcurve/mission",
+  "version": "0.1.0",
+  "description": "APIHUB 일주일 방문미션 공용 — 웹뷰 열기 · MocationNativeBridge(openAppTarget) · 주소 차단 규칙 · 에러 화면",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-native": ">=0.74",
+    "react-native-webview": ">=13"
+  },
+  "peerDependenciesMeta": {
+    "react-native": {
+      "optional": true
+    },
+    "react-native-webview": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.0",
+    "react": "^19.2.0",
+    "react-native": "^0.86.3",
+    "react-native-webview": "^13.16.0",
+    "typescript": "~5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "license": "UNLICENSED",
+  "private": false,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jxamen/jcurve-packages",
+    "directory": "packages/mission"
+  }
+}
