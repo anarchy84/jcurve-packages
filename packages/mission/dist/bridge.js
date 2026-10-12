@@ -20,6 +20,9 @@ function parseBridgeMessage(data, nonce) {
     // 이 로드의 비밀 값(shim 안에만 있다)이 맞아야 한다 — iframe · 다른 글이 같은 모양의 메시지를 보내도 걸러진다
     if (nonce !== undefined && j.n !== nonce)
         return null;
+    // 최상위 프레임이 보낸 것만(t:1). 틀린 값 · 없음은 거절
+    if (j.t !== 1)
+        return null;
     const method = j.method;
     const p = (j.params ?? {});
     switch (method) {

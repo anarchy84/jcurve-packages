@@ -20,42 +20,63 @@ const nonceOf = () => Math.random().toString(36).slice(2) + Date.now().toString(
 function MissionWebView({ url, theme = states_1.DEFAULT_THEME, onClose, onEvent, onFloatingPopup, onOverlayRequest, overlayReady = false }) {
     const valid = (0, entry_1.isEntryUrl)(url);
     const [state, setState] = (0, react_1.useState)('loading');
-    const [nonce, setNonce] = (0, react_1.useState)(0); // 바뀌면 웹뷰를 새로 만든다(재시도 · 렌더러 복구)
-    const secret = (0, react_1.useMemo)(nonceOf, [nonce, url]); // 이 로드의 비밀 값 — shim 안에만 있다
+    const [retryKey, setRetryKey] = (0, react_1.useState)(0); // 사용자가 다시 시도(처음부터)
+    const [rebuild, setRebuild] = (0, react_1.useState)(0); // 렌더러가 죽어 웹뷰만 다시 만듦(실패 횟수는 이어서 센다)
+    const secret = (0, react_1.useMemo)(nonceOf, [url, retryKey, rebuild]); // 이 로드의 비밀 값 — shim 안에만 있다
     const handle = (0, react_1.useRef)(null);
     const timer = (0, react_1.useRef)(null);
+    const loadedTimer = (0, react_1.useRef)(null);
     const recovered = (0, react_1.useRef)(0);
+    const failedRef = (0, react_1.useRef)(false);
+    const stateRef = (0, react_1.useRef)('loading');
     const canGoBack = (0, react_1.useRef)(false);
     const platform = react_native_1.Platform.OS === 'ios' ? 'ios' : 'android';
     const shim = (0, react_1.useMemo)(() => (0, shim_1.bridgeShim)(platform, overlayReady, secret), [platform, overlayReady, secret]);
-    const disarm = (0, react_1.useCallback)(() => { if (timer.current) {
-        clearTimeout(timer.current);
-        timer.current = null;
-    } }, []);
+    const setSt = (0, react_1.useCallback)((v) => { stateRef.current = v; setState(v); }, []);
+    const disarm = (0, react_1.useCallback)(() => {
+        if (timer.current) {
+            clearTimeout(timer.current);
+            timer.current = null;
+        }
+        if (loadedTimer.current) {
+            clearTimeout(loadedTimer.current);
+            loadedTimer.current = null;
+        }
+    }, []);
     const fail = (0, react_1.useCallback)((kind, why) => {
+        failedRef.current = true;
         disarm();
-        setState(kind);
+        canGoBack.current = false; // 오류 화면에서는 웹 히스토리로 뒤로 가지 않는다 — 뒤로 가기는 닫기
+        setSt(kind);
         onEvent?.('mission_error', { kind, ...why });
-    }, [disarm, onEvent]);
-    // 로드가 시작될 때마다(주소 · 다시 시도) 상태와 타이머를 처음부터
+    }, [disarm, onEvent, setSt]);
+    // 로드(첫 로드 · 웹뷰 안 이동 · reload)가 시작될 때마다 시간 제한을 다시 건다
+    const arm = (0, react_1.useCallback)(() => {
+        if (timer.current)
+            clearTimeout(timer.current);
+        timer.current = setTimeout(() => fail('error', { why: 'timeout' }), LOAD_TIMEOUT_MS);
+    }, [fail]);
+    // 주소 · 다시 시도가 바뀌면 처음부터(렌더러 복구는 여기 안 든다 — 반복 실패 횟수를 이어서 세려고)
     (0, react_1.useEffect)(() => {
         recovered.current = 0;
-        setState('loading');
+        failedRef.current = false;
+        canGoBack.current = false;
+        setSt('loading');
         if (!valid) {
             fail('error', { why: 'bad_url' });
             return disarm;
         }
         onEvent?.('mission_open');
-        disarm();
-        timer.current = setTimeout(() => fail('error', { why: 'timeout' }), LOAD_TIMEOUT_MS);
+        arm();
         return disarm;
-    }, [url, nonce]); // eslint-disable-line react-hooks/exhaustive-deps
-    // Android 뒤로 가기 — 웹 히스토리가 있으면 먼저, 첫 페이지면 닫기
+    }, [url, retryKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Android 뒤로 가기 — 정상 화면에서 웹 히스토리가 있으면 먼저, 아니면(첫 페이지 · 오류 화면) 닫기
     (0, react_1.useEffect)(() => {
         if (react_native_1.Platform.OS !== 'android')
             return;
         const sub = react_native_1.BackHandler.addEventListener('hardwareBackPress', () => {
-            if (canGoBack.current) {
+            const normal = stateRef.current === 'loading' || stateRef.current === 'ok';
+            if (normal && canGoBack.current) {
                 handle.current?.goBack();
                 return true;
             }
@@ -67,10 +88,23 @@ function MissionWebView({ url, theme = states_1.DEFAULT_THEME, onClose, onEvent,
         });
         return () => sub.remove();
     }, [onClose]);
-    const retry = () => setNonce(n => n + 1);
+    const retry = () => setRetryKey(n => n + 1);
+    const recoverRenderer = (reload) => {
+        recovered.current += 1;
+        if (recovered.current > MAX_RECOVER) {
+            fail('error', { why: 'renderer' });
+            return;
+        }
+        failedRef.current = false;
+        arm();
+        if (reload)
+            handle.current?.reload();
+        else
+            setRebuild(n => n + 1);
+    };
     const openExternal = (u) => { onEvent?.('mission_external_link'); void react_native_1.Linking.openURL(u).catch(() => undefined); };
     const onMessage = (e) => {
-        // 보낸 쪽 화면이 승인된 origin 이고, 이 로드의 비밀 값을 아는 글만 받는다
+        // 보낸 쪽 화면이 승인된 origin 이고, 최상위 프레임이며, 이 로드의 비밀 값을 아는 글만 받는다
         if (!(0, entry_1.isAllowedOrigin)(e.nativeEvent.url))
             return;
         const m = (0, bridge_1.parseBridgeMessage)(e.nativeEvent.data, secret);
@@ -97,7 +131,9 @@ function MissionWebView({ url, theme = states_1.DEFAULT_THEME, onClose, onEvent,
         return (0, jsx_runtime_1.jsx)(states_1.MissionState, { kind: state, theme: theme, onRetry: retry, onClose: onClose });
     if (!valid)
         return (0, jsx_runtime_1.jsx)(states_1.MissionState, { kind: "error", theme: theme, onClose: onClose });
-    return (0, jsx_runtime_1.jsxs)(react_native_1.View, { style: { flex: 1, backgroundColor: theme.bg }, children: [(0, jsx_runtime_1.jsx)(WebView, { ref: handle, source: { uri: url }, originWhitelist: ['https://*'], injectedJavaScriptBeforeContentLoaded: shim, injectedJavaScriptBeforeContentLoadedForMainFrameOnly: true, injectedJavaScriptForMainFrameOnly: true, onMessage: onMessage, javaScriptEnabled: true, domStorageEnabled: true, sharedCookiesEnabled: true, thirdPartyCookiesEnabled: true, allowFileAccess: false, allowsInlineMediaPlayback: true, javaScriptCanOpenWindowsAutomatically: false, setSupportMultipleWindows: false, setBuiltInZoomControls: false, allowsBackForwardNavigationGestures: true, onNavigationStateChange: s => { canGoBack.current = s.canGoBack; }, onLoad: () => { disarm(); setState('ok'); onEvent?.('mission_loaded'); }, onError: () => fail('error', { why: 'load' }), onHttpError: e => {
+    return (0, jsx_runtime_1.jsxs)(react_native_1.View, { style: { flex: 1, backgroundColor: theme.bg }, children: [(0, jsx_runtime_1.jsx)(WebView, { ref: handle, source: { uri: url }, 
+                // 모든 요청이 onShouldStartLoadWithRequest 를 거치게 한다(비 https 가 라이브러리 기본 처리로 빠져 우리 규칙을 건너뛰지 않게) — 거르는 건 아래 규칙
+                originWhitelist: ['*'], injectedJavaScriptBeforeContentLoaded: shim, injectedJavaScriptBeforeContentLoadedForMainFrameOnly: true, injectedJavaScriptForMainFrameOnly: true, onMessage: onMessage, javaScriptEnabled: true, domStorageEnabled: true, sharedCookiesEnabled: true, thirdPartyCookiesEnabled: true, allowFileAccess: false, allowsInlineMediaPlayback: true, javaScriptCanOpenWindowsAutomatically: false, setSupportMultipleWindows: false, setBuiltInZoomControls: false, allowsBackForwardNavigationGestures: true, onNavigationStateChange: s => { canGoBack.current = s.canGoBack && !failedRef.current; }, onLoad: () => { disarm(); setState('ok'); onEvent?.('mission_loaded'); }, onError: () => fail('error', { why: 'load' }), onHttpError: e => {
                     const code = e.nativeEvent.statusCode;
                     if (code === 503)
                         fail('maintenance', { why: 'http', status: code });
@@ -107,13 +143,7 @@ function MissionWebView({ url, theme = states_1.DEFAULT_THEME, onClose, onEvent,
                         fail('error', { why: 'http', status: code });
                 }, 
                 // 렌더러가 죽으면 웹뷰를 새로 만든다(reload 는 죽은 렌더러에 소용없다). 반복하면 오류 화면
-                onRenderProcessGone: () => { recovered.current += 1; if (recovered.current > MAX_RECOVER)
-                    fail('error', { why: 'renderer' });
-                else
-                    setNonce(n => n + 1); }, onContentProcessDidTerminate: () => { recovered.current += 1; if (recovered.current > MAX_RECOVER)
-                    fail('error', { why: 'renderer' });
-                else
-                    handle.current?.reload(); }, 
+                onRenderProcessGone: () => recoverRenderer(false), onContentProcessDidTerminate: () => recoverRenderer(true), 
                 // 승인된 APIHUB origin 안에서만 웹뷰가 움직인다. 다른 https 주소는 기본 브라우저로, 앱 스킴 · intent 는 openAppTarget 규칙으로 열고, 웹뷰는 그대로
                 onShouldStartLoadWithRequest: req => {
                     if (req.url === 'about:blank')
@@ -132,5 +162,5 @@ function MissionWebView({ url, theme = states_1.DEFAULT_THEME, onClose, onEvent,
                             onEvent?.('mission_target_blocked');
                     }
                     return false;
-                } }, `${nonce}`), state === 'loading' ? (0, jsx_runtime_1.jsx)(react_native_1.View, { style: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }, pointerEvents: "none", children: (0, jsx_runtime_1.jsx)(states_1.MissionLoading, { theme: theme }) }) : null] });
+                } }, `${retryKey}-${rebuild}`), state === 'loading' ? (0, jsx_runtime_1.jsx)(react_native_1.View, { style: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }, pointerEvents: "none", children: (0, jsx_runtime_1.jsx)(states_1.MissionLoading, { theme: theme }) }) : null] });
 }

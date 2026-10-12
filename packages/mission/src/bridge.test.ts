@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { openAppTarget, parseBridgeMessage } from './bridge';
 
-const msg = (method: string, params?: unknown, n?: string) => JSON.stringify({ m: 'MocationNativeBridge', ...(n !== undefined ? { n } : {}), method, params });
+const msg = (method: string, params?: unknown, n?: string) => JSON.stringify({ m: 'MocationNativeBridge', t: 1, ...(n !== undefined ? { n } : {}), method, params });
 
 describe('parseBridgeMessage', () => {
   it('openAppTarget', () => {
@@ -30,6 +30,10 @@ describe('parseBridgeMessage', () => {
     expect(dur(Infinity)).toBe(300);
     expect(dur(NaN)).toBe(300);
     expect(dur(60.9)).toBe(60);
+  });
+  it('최상위 프레임 표시(t:1)가 없거나 틀리면 거절', () => {
+    expect(parseBridgeMessage(JSON.stringify({ m: 'MocationNativeBridge', method: 'hasOverlayPermission', params: {} }))).toBeNull();
+    expect(parseBridgeMessage(JSON.stringify({ m: 'MocationNativeBridge', t: 0, method: 'hasOverlayPermission', params: {} }))).toBeNull();
   });
   it('비밀 값(nonce)이 맞을 때만 받는다 — 다른 값 · 없음은 null', () => {
     expect(parseBridgeMessage(msg('hasOverlayPermission', undefined, 'abc'), 'abc')).not.toBeNull();
