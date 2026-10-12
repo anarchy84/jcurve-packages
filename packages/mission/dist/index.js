@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.MissionState = exports.MissionLoading = exports.DEFAULT_THEME = exports.MissionWebView = exports.isEntryUrl = exports.fetchEntry = exports.bridgeShim = exports.parseBridgeMessage = exports.openAppTarget = exports.schemeOf = exports.resolveTarget = exports.isWebUrl = exports.isBlocked = exports.BLOCKED_SCHEMES = void 0;
+exports.MissionState = exports.MissionLoading = exports.DEFAULT_THEME = exports.MissionWebView = exports.isEntryUrl = exports.isAllowedOrigin = exports.fetchEntry = exports.ALLOWED_ORIGINS = exports.bridgeShim = exports.parseBridgeMessage = exports.openAppTarget = exports.schemeOf = exports.resolveTarget = exports.isWebUrl = exports.isBlocked = exports.BLOCKED_SCHEMES = void 0;
 var policy_1 = require("./policy");
 Object.defineProperty(exports, "BLOCKED_SCHEMES", { enumerable: true, get: function () { return policy_1.BLOCKED_SCHEMES; } });
 Object.defineProperty(exports, "isBlocked", { enumerable: true, get: function () { return policy_1.isBlocked; } });
@@ -13,7 +13,9 @@ Object.defineProperty(exports, "parseBridgeMessage", { enumerable: true, get: fu
 var shim_1 = require("./shim");
 Object.defineProperty(exports, "bridgeShim", { enumerable: true, get: function () { return shim_1.bridgeShim; } });
 var entry_1 = require("./entry");
+Object.defineProperty(exports, "ALLOWED_ORIGINS", { enumerable: true, get: function () { return entry_1.ALLOWED_ORIGINS; } });
 Object.defineProperty(exports, "fetchEntry", { enumerable: true, get: function () { return entry_1.fetchEntry; } });
+Object.defineProperty(exports, "isAllowedOrigin", { enumerable: true, get: function () { return entry_1.isAllowedOrigin; } });
 Object.defineProperty(exports, "isEntryUrl", { enumerable: true, get: function () { return entry_1.isEntryUrl; } });
 var MissionWebView_1 = require("./MissionWebView");
 Object.defineProperty(exports, "MissionWebView", { enumerable: true, get: function () { return MissionWebView_1.MissionWebView; } });

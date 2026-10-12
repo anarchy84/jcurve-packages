@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { openAppTarget, parseBridgeMessage } from './bridge';
 
-const msg = (method: string, params?: unknown) => JSON.stringify({ m: 'MocationNativeBridge', method, params });
+const msg = (method: string, params?: unknown, n?: string) => JSON.stringify({ m: 'MocationNativeBridge', ...(n !== undefined ? { n } : {}), method, params });
 
 describe('parseBridgeMessage', () => {
   it('openAppTarget', () => {
@@ -18,6 +18,23 @@ describe('parseBridgeMessage', () => {
   it('오버레이 두 개', () => {
     expect(parseBridgeMessage(msg('requestOverlayPermission'))).toEqual({ method: 'requestOverlayPermission', params: {} });
     expect(parseBridgeMessage(msg('hasOverlayPermission'))).toEqual({ method: 'hasOverlayPermission', params: {} });
+  });
+  it('showFloatingPopup — durationSec 은 유한한 양수 number 만(강제 변환 없음)', () => {
+    const base = { imageUrl: 'https://i', name: 'n', price: '1' };
+    const dur = (d: unknown) => (parseBridgeMessage(msg('showFloatingPopup', { ...base, durationSec: d })) as { params: { durationSec: number } }).params.durationSec;
+    expect(dur(true)).toBe(300);
+    expect(dur('45')).toBe(300);
+    expect(dur({ toString: null })).toBe(300);
+    expect(dur([5])).toBe(300);
+    expect(dur(0.5)).toBe(1);
+    expect(dur(Infinity)).toBe(300);
+    expect(dur(NaN)).toBe(300);
+    expect(dur(60.9)).toBe(60);
+  });
+  it('비밀 값(nonce)이 맞을 때만 받는다 — 다른 값 · 없음은 null', () => {
+    expect(parseBridgeMessage(msg('hasOverlayPermission', undefined, 'abc'), 'abc')).not.toBeNull();
+    expect(parseBridgeMessage(msg('hasOverlayPermission', undefined, 'zzz'), 'abc')).toBeNull();
+    expect(parseBridgeMessage(msg('hasOverlayPermission'), 'abc')).toBeNull();
   });
   it('우리 shim 이 보낸 게 아니거나 이상하면 null', () => {
     expect(parseBridgeMessage('not json')).toBeNull();

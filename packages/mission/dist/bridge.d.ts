@@ -21,7 +21,7 @@ export type BridgeMessage = {
     params: Record<string, never>;
 };
 /** react-native-webview 의 onMessage 문자열 → 알려진 메시지. 우리가 심은 shim 이 보낸 것만 받는다(다른 글은 null) */
-export declare function parseBridgeMessage(data: unknown): BridgeMessage | null;
+export declare function parseBridgeMessage(data: unknown, nonce?: string): BridgeMessage | null;
 /**
  * openAppTarget — 못 열면 fallbackUrl(스토어 링크 등). 막힌 주소는 열지 않는다.
  * openURL 은 앱이 넘긴다(Linking.openURL). 열었으면 true.

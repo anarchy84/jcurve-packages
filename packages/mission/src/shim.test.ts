@@ -17,10 +17,10 @@ describe('bridgeShim', () => {
   it('실제 실행: Android 방식 호출이 postMessage 로 간다', () => {
     const sent: string[] = [];
     const win: Record<string, unknown> = { ReactNativeWebView: { postMessage: (s: string) => sent.push(s) } };
-    new Function('window', bridgeShim('android'))(win);
+    new Function('window', bridgeShim('android', false, 'SECRET'))(win);
     const b = win.MocationNativeBridge as { openAppTarget: (p: string) => void; hasOverlayPermission: () => boolean };
     b.openAppTarget(JSON.stringify({ url: 'coupang://a' }));
-    expect(JSON.parse(sent[0])).toEqual({ m: 'MocationNativeBridge', method: 'openAppTarget', params: { url: 'coupang://a' } });
+    expect(JSON.parse(sent[0])).toEqual({ m: 'MocationNativeBridge', n: 'SECRET', method: 'openAppTarget', params: { url: 'coupang://a' } });
     expect(b.hasOverlayPermission()).toBe(false);
   });
   it('실제 실행: iOS 방식 호출이 postMessage 로 가고 기존 핸들러(ReactNativeWebView)는 남는다', () => {
@@ -43,5 +43,11 @@ describe('bridgeShim', () => {
     mh.MocationNativeBridge.postMessage({ message: 'openAppTarget', url: 'a://b' });
     expect(sent.length).toBe(1);
     expect(mh.ReactNativeWebView).toBe(rn);
+  });
+  it('비밀 값은 전역에 노출하지 않는다(window 속성으로 읽을 수 없다)', () => {
+    const win: Record<string, unknown> = { ReactNativeWebView: { postMessage: () => {} } };
+    new Function('window', bridgeShim('android', false, 'TOPSECRET'))(win);
+    expect(JSON.stringify(Object.keys(win))).not.toContain('TOPSECRET');
+    expect(Object.values(win).some(v => typeof v === 'string' && v.includes('TOPSECRET'))).toBe(false);
   });
 });

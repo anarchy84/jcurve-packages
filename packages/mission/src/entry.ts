@@ -7,12 +7,28 @@ export type Requester = (path: string, options?: { method?: string; body?: unkno
 
 const OK_HOSTS = ['service.mocation.co.kr', 'test.mocation.co.kr'];
 
-/** 서버가 준 주소가 APIHUB 웹뷰 주소(https · 약속된 호스트 · entry.php)일 때만 쓴다 — 이상한 주소로 웹뷰를 열지 않는다 */
-export function isEntryUrl(url: unknown): url is string {
+/** 허용 origin(스킴 + 호스트, 포트 없음) */
+export const ALLOWED_ORIGINS = OK_HOSTS.map(h => 'https://' + h);
+
+/** 이 주소가 승인된 APIHUB origin(https · 약속된 호스트 · 포트 · 계정 정보 없음)인가 */
+export function isAllowedOrigin(url: unknown): boolean {
   if (typeof url !== 'string') return false;
   try {
     const u = new URL(url);
-    return u.protocol === 'https:' && OK_HOSTS.includes(u.hostname) && u.pathname === '/alwayz/entry.php';
+    return u.protocol === 'https:' && OK_HOSTS.includes(u.hostname) && u.port === '' && u.username === '' && u.password === '';
+  } catch { return false; }
+}
+
+/**
+ * 서버가 준 웹뷰 첫 주소 — 승인된 origin 의 /alwayz/entry.php 이고 필수 파라미터(pubKey · uid · trackingId)가 비어 있지 않을 때만.
+ * 이상한 주소로 웹뷰를 열지 않는다. 공개 컴포넌트(MissionWebView)에 들어오는 url 도 같은 검사를 한다.
+ */
+export function isEntryUrl(url: unknown): url is string {
+  if (!isAllowedOrigin(url)) return false;
+  try {
+    const u = new URL(url as string);
+    if (u.pathname !== '/alwayz/entry.php') return false;
+    return ['pubKey', 'uid', 'trackingId'].every(k => (u.searchParams.get(k) ?? '').trim() !== '');
   } catch { return false; }
 }
 

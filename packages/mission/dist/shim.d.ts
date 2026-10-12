@@ -6,4 +6,4 @@
  * 오버레이(다른 앱 위에 표시)는 네이티브 모듈이 있어야 해서 이 OTA 판에서는 hasOverlayPermission 이 항상 false 다(overlay 인자로 켠다).
  */
 export type ShimPlatform = 'ios' | 'android';
-export declare function bridgeShim(platform: ShimPlatform, overlay?: boolean): string;
+export declare function bridgeShim(platform: ShimPlatform, overlay?: boolean, nonce?: string): string;

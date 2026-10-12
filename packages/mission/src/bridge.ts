@@ -10,11 +10,13 @@ export type BridgeMessage =
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 
 /** react-native-webview 의 onMessage 문자열 → 알려진 메시지. 우리가 심은 shim 이 보낸 것만 받는다(다른 글은 null) */
-export function parseBridgeMessage(data: unknown): BridgeMessage | null {
+export function parseBridgeMessage(data: unknown, nonce?: string): BridgeMessage | null {
   if (typeof data !== 'string' || data.length > 20000) return null;
   let j: unknown;
   try { j = JSON.parse(data); } catch { return null; }
   if (!j || typeof j !== 'object' || (j as { m?: unknown }).m !== 'MocationNativeBridge') return null;
+  // 이 로드의 비밀 값(shim 안에만 있다)이 맞아야 한다 — iframe · 다른 글이 같은 모양의 메시지를 보내도 걸러진다
+  if (nonce !== undefined && (j as { n?: unknown }).n !== nonce) return null;
   const method = (j as { method?: unknown }).method;
   const p = ((j as { params?: unknown }).params ?? {}) as Record<string, unknown>;
   switch (method) {
@@ -27,8 +29,10 @@ export function parseBridgeMessage(data: unknown): BridgeMessage | null {
     case 'showFloatingPopup': {
       const imageUrl = str(p.imageUrl), name = str(p.name), price = str(p.price);
       if (imageUrl === undefined || name === undefined || price === undefined) return null;
-      const d = Number(p.durationSec);
-      return { method, params: { imageUrl, name, price, durationSec: Number.isFinite(d) && d > 0 ? Math.floor(d) : 300 } };   // 미전달 · 0 이하 · 숫자 아님이면 300초
+      // 유한한 양수 number 만 쓴다(문자열 · 객체 · true 는 강제 변환하지 않는다) — 그 밖(미전달 · 0 이하 · 숫자 아님)은 300초
+      const d = p.durationSec;
+      const sec = typeof d === 'number' && Number.isFinite(d) && d > 0 ? Math.max(1, Math.floor(d)) : 300;
+      return { method, params: { imageUrl, name, price, durationSec: sec } };
     }
     case 'requestOverlayPermission':
     case 'hasOverlayPermission':

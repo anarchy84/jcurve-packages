@@ -7,10 +7,11 @@
  */
 export type ShimPlatform = 'ios' | 'android';
 
-export function bridgeShim(platform: ShimPlatform, overlay = false): string {
+export function bridgeShim(platform: ShimPlatform, overlay = false, nonce = ''): string {
+  const n = JSON.stringify(String(nonce));
   const common = `
   var send = function (method, params) {
-    try { window.ReactNativeWebView.postMessage(JSON.stringify({ m: 'MocationNativeBridge', method: method, params: params || {} })); } catch (e) {}
+    try { window.ReactNativeWebView.postMessage(JSON.stringify({ m: 'MocationNativeBridge', n: ${n}, method: method, params: params || {} })); } catch (e) {}
   };
   var parse = function (p) { if (typeof p === 'string') { try { return JSON.parse(p); } catch (e) { return {}; } } return p || {}; };`;
   if (platform === 'android') {

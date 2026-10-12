@@ -35,4 +35,17 @@ describe('policy', () => {
     expect(resolveTarget('coupang://a', 'javascript:alert(1)')).toEqual({ url: 'coupang://a' });
     expect(resolveTarget('javascript:1', 'https://a.com')).toBeNull();
   });
+  it('폴백에 중첩 intent / 막힌 스킴을 넣어도 열지 않는다', () => {
+    expect(resolveTarget('coupang://a', 'intent://x#Intent;scheme=javascript;end')).toEqual({ url: 'coupang://a' });
+    expect(resolveTarget('coupang://a', 'javascript:alert(1)')).toEqual({ url: 'coupang://a' });
+    // intent 의 browser_fallback_url 이 다시 intent 이거나 막힌 스킴이면 버린다
+    expect(resolveTarget('intent://x#Intent;scheme=coupang;S.browser_fallback_url=intent%3A%2F%2Fy%23Intent%3Bscheme%3Djavascript%3Bend;end')).toEqual({ url: 'coupang://x' });
+    expect(resolveTarget('intent://x#Intent;scheme=coupang;S.browser_fallback_url=javascript%3Aalert(1);end')).toEqual({ url: 'coupang://x' });
+    // 주 주소가 막혀 폴백만 남는 경우에도 폴백이 intent 면 null
+    expect(resolveTarget('intent://x#Intent;S.browser_fallback_url=intent%3A%2F%2Fy;end')).toBeNull();
+    expect(resolveTarget('intent://x#Intent;scheme=intent;end')).toBeNull();
+  });
+  it('market 폴백은 플레이스토어 https 로', () => {
+    expect(resolveTarget('coupang://a', 'market://details?id=a.b')).toEqual({ url: 'coupang://a', fallbackUrl: 'https://play.google.com/store/apps/details?id=a.b' });
+  });
 });

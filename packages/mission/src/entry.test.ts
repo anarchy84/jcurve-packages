@@ -1,13 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { fetchEntry, isEntryUrl } from './entry';
+import { fetchEntry, isAllowedOrigin, isEntryUrl } from './entry';
 
 const good = 'https://service.mocation.co.kr/alwayz/entry.php?pubKey=a&uid=b&trackingId=c';
 
 describe('isEntryUrl', () => {
   it('약속된 호스트 · https · entry.php 만', () => {
     expect(isEntryUrl(good)).toBe(true);
-    expect(isEntryUrl('https://test.mocation.co.kr/alwayz/entry.php?x=1')).toBe(true);
-    for (const u of ['http://service.mocation.co.kr/alwayz/entry.php', 'https://evil.com/alwayz/entry.php', 'https://service.mocation.co.kr.evil.com/alwayz/entry.php', 'https://service.mocation.co.kr/other.php', 'javascript:1', 42, null]) expect(isEntryUrl(u), String(u)).toBe(false);
+    expect(isEntryUrl('https://test.mocation.co.kr/alwayz/entry.php?pubKey=a&uid=b&trackingId=c')).toBe(true);
+    for (const u of ['http://service.mocation.co.kr/alwayz/entry.php', 'https://evil.com/alwayz/entry.php', 'https://service.mocation.co.kr.evil.com/alwayz/entry.php', 'https://service.mocation.co.kr/other.php', 'https://service.mocation.co.kr:8443/alwayz/entry.php?pubKey=a&uid=b&trackingId=c', 'https://user:pw@service.mocation.co.kr/alwayz/entry.php?pubKey=a&uid=b&trackingId=c', 'https://service.mocation.co.kr/alwayz/entry.php', 'https://service.mocation.co.kr/alwayz/entry.php?pubKey=a&uid=b', 'https://service.mocation.co.kr/alwayz/entry.php?pubKey=&uid=b&trackingId=c', 'javascript:1', 42, null]) expect(isEntryUrl(u), String(u)).toBe(false);
+  });
+});
+
+describe('isAllowedOrigin', () => {
+  it('승인된 https origin 만(포트 · 계정 정보 · 비슷한 호스트 거절)', () => {
+    expect(isAllowedOrigin('https://service.mocation.co.kr/any/path?x=1')).toBe(true);
+    expect(isAllowedOrigin('https://test.mocation.co.kr')).toBe(true);
+    for (const u of ['http://service.mocation.co.kr/', 'https://service.mocation.co.kr:444/', 'https://a@service.mocation.co.kr/', 'https://service.mocation.co.kr.evil.com/', 'https://evil.com/?service.mocation.co.kr', 'about:blank', '', undefined]) expect(isAllowedOrigin(u), String(u)).toBe(false);
   });
 });
 

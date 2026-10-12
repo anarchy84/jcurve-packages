@@ -1,9 +1,9 @@
 import React from 'react';
 import { type BridgeMessage } from './bridge';
 import { type MissionTheme } from './states';
-export type MissionEvent = 'mission_open' | 'mission_loaded' | 'mission_error' | 'mission_target_open' | 'mission_target_blocked' | 'mission_overlay_request' | 'mission_floating_popup';
+export type MissionEvent = 'mission_open' | 'mission_loaded' | 'mission_error' | 'mission_target_open' | 'mission_target_blocked' | 'mission_overlay_request' | 'mission_floating_popup' | 'mission_external_link';
 export type MissionWebViewProps = {
-    /** 서버 apihub/entry 가 준 웹뷰 주소(fetchEntry 결과) */
+    /** 서버 apihub/entry 가 준 웹뷰 주소(fetchEntry 결과) — 승인된 APIHUB 주소가 아니면 열지 않고 오류 화면 */
     url: string;
     theme?: MissionTheme;
     onClose?: () => void;
@@ -18,4 +18,5 @@ export type MissionWebViewProps = {
     /** 네이티브 오버레이가 들어간 빌드면 true(hasOverlayPermission 응답) */
     overlayReady?: boolean;
 };
+/** 주소가 바뀌었거나 다시 시도할 때마다 상태를 처음부터 */
 export declare function MissionWebView({ url, theme, onClose, onEvent, onFloatingPopup, onOverlayRequest, overlayReady }: MissionWebViewProps): React.JSX.Element;
