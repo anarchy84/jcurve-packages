@@ -66,6 +66,7 @@ export function MissionWebView({ url, theme = DEFAULT_THEME, onClose, onEvent, o
   }, [disarm, onEvent, setSt]);
   // 로드(첫 로드 · 웹뷰 안 이동 · reload)가 시작될 때마다 시간 제한을 다시 건다
   const arm = useCallback(() => {
+    if (loadedTimer.current) { clearTimeout(loadedTimer.current); loadedTimer.current = null; }   // 새 로드가 시작되면 이전 로드의 「성공 확인」은 취소
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => fail('error', { why: 'timeout' }), LOAD_TIMEOUT_MS);
   }, [fail]);
