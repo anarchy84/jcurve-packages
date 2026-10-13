@@ -243,14 +243,27 @@ describe('presentation committed before SDK OPENED (independent-review regressio
     vi.advanceTimersByTime(600); await flush(); expect(s.order).toEqual(['consent', 'att', 'init']); expect(s.made).toHaveLength(1);
     expect(s.made[0].options.requestNonPersonalizedAdsOnly).toBe(true); first.cancel(); await result;
   });
-  it.each(['rejection', 'native-error'])('native presentation failure after cancel releases lease with no second terminal: %s', async (kind) => {
+  it('native show promise rejection after cancel releases lease with no second terminal', async () => {
     const s = setup(); const controller = s.normal(); const abort = vi.fn(); const fail = vi.fn();
     await controller.show({ onAbort: abort, onFail: fail }); let reject!: (error: Error) => void;
     s.made[0].show = () => new Promise((_, r) => { reject = r; });
     s.made[0].emit(E.LOADED); controller.cancel(); expect(abort).toHaveBeenCalledTimes(1);
-    if (kind === 'rejection') reject(new Error('native show rejected')); else s.made[0].emit(E.ERROR, { code: 'native' });
+    reject(new Error('native show rejected'));
     await flush(); expect(fail).not.toHaveBeenCalled(); expect(s.listeners.size).toBe(0);
     const next = s.rewarded(); const p = next.play({}); await flush(); expect(s.made).toHaveLength(2); next.cancel(); await p;
+  });
+  it('generic ERROR after show before OPENED reports uncertainty and retains lease until CLOSED', async () => {
+    const s = setup(); const controller = s.normal(); const result = controller.play(); await flush();
+    s.made[0].emit(E.LOADED); s.made[0].emit(E.ERROR, { code: 'native' });
+    expect(await result).toMatchObject({ opened: false, noAd: false, busy: false });
+    expect((await s.rewarded().play({})).busy).toBe(true); expect(s.made).toHaveLength(1);
+    s.made[0].emit(E.CLOSED); expect(s.listeners.size).toBe(0);
+  });
+  it('generic ERROR after cancelled presentation cannot unlock or deliver a second terminal', async () => {
+    const s = setup(); const controller = s.normal(); const abort = vi.fn(); const fail = vi.fn();
+    await controller.show({ onAbort: abort, onFail: fail }); s.made[0].emit(E.LOADED); controller.cancel(); s.made[0].emit(E.ERROR, { code: 'native' });
+    expect(abort).toHaveBeenCalledTimes(1); expect(fail).not.toHaveBeenCalled(); expect((await s.rewarded().play({})).busy).toBe(true);
+    s.made[0].emit(E.CLOSED); expect(s.listeners.size).toBe(0);
   });
 });
 

@@ -138,7 +138,8 @@ export async function playLevelTransition(ads: ReturnType<typeof createLevelTran
   `cancel()`은 대기 중 바로 끝난다. 이미 열린 네이티브 광고는 JS로 닫을 수 없으므로 취소 결과를 반환해도
   SDK CLOSED 또는 전경 복귀까지 공통 잠금을 유지한다. `show()`를 네이티브에 호출한 뒤 OPENED가 아직 오지 않은
   표시 미확정 구간도 잠금을 유지하고 `noAd: false`로 반환한다. `opened: false, noAd: false`는 이 구간을 포함한다.
-  네이티브 show 거절/ERROR가 OPENED 전에 도착하면 표시 실패가 확정돼 잠금을 정리한다.
+  네이티브 show 동기 예외/Promise 거절이 OPENED 전에 도착하면 표시 실패가 확정돼 잠금을 정리한다.
+  일반 ERROR 이벤트는 표시 요청 후 미확정 구간의 종료 증거로 쓰지 않는다.
 
 ## 기여 후보: anchored adaptive banner
 
@@ -182,7 +183,7 @@ export function LevelBanner({ units, test, enabled }: { units: AdUnits; test: bo
    보상형의 자동 ATT는 UMP → ATT → SDK 초기화 → 요청 순서다. 앱 루트에서 `requestTracking()`을 먼저 await하고 알림 권한을 요청하는 기존 계약도 유지한다.
 5. 보상형/보상형 전면/일반 전면은 **모든 factory 인스턴스 사이 공통 잠금 하나**를 쓴다.
    표시 요청을 시작한 광고를 시간만으로 강제 잠금 해제하던 경로는 제거했다. 15초 시간 초과는 대기 결과를 끝내지만
-   네이티브 표시를 시작했다면 잠금을 유지한다. 닫힘/전경 복귀 또는 OPENED 전 네이티브 표시 실패가 잠금 종료 근거다.
+   네이티브 표시를 시작했다면 잠금을 유지한다. 닫힘/전경 복귀 또는 OPENED 전 show 동기 예외/Promise 거절이 잠금 종료 근거다.
 6. 광고 인스턴스는 요청마다 새로 만들고 리스너·타이머를 정리한다. 중복 LOADED/OPENED/EARNED/CLOSED와 정리 뒤 늦은 콜백을 차단한다.
    생성·warm·닫힘 직후에 다음 광고를 미리 요청하지 않는다. 개발 모드 또는 `test: true`는 Google TestIds를 사용한다.
 7. 광고 완료는 서버 SSV 지급 증명이 아니다. 이 패키지는 앱 지갑/아이템을 지급하지 않는다.
@@ -203,7 +204,7 @@ API 검토 근거: 설치 SDK `react-native-google-mobile-ads` 16.5.0의 `Banner
 
 ## 생산자 점검 (2026-10-13)
 
-패키지 범위 TypeScript 빌드, 기존 rewarded/틱톡/모드/미디에이션 및 새 형식 테스트 110개,
+패키지 범위 TypeScript 빌드, 기존 rewarded/틱톡/모드/미디에이션 및 새 형식 테스트 111개,
 pack 포함 파일, SDK 없는 Node의 public entry import/`available: false`/`noAd` 반환을 확인했다.
 네이티브 SDK를 연결하거나 실광고를 요청하지 않았다. 독립 검증과 방어 코드 무력화 실험은 별도 검증 세션의 책임이다.
 
@@ -219,4 +220,5 @@ git diff --check
 스토어 제출, 공식 패키지 릴리스, 기기 UMP/ATT·배너·SSV는 이 점검으로 증명하지 않는다.
 
 첫 독립 검증에서 표시 직전 취소/백그라운드/시간 초과 잠금, OPENED 없는 CLOSED 중복 종료,
-보상형 iOS ATT 순서의 8개 실패가 재현돼 해당 회귀 테스트와 수정이 포함됐다. 수정본의 독립 재검증 결과는 별도로 판정한다.
+보상형 iOS ATT 순서의 8개 실패, 표시 후 OPENED 전 ERROR의 확장 공격 1개 실패가 재현돼 해당 회귀 테스트와 수정이 포함됐다.
+수정본의 독립 재검증 결과는 별도로 판정한다.

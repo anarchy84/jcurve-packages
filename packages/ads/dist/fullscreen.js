@@ -186,13 +186,8 @@ function createFullscreen(env, sdk) {
                 offs.push(ad.addAdEventListener(events.ERROR, (error) => {
                     if (disposed || closed)
                         return;
-                    if (!opened) {
-                        presented = false; // A native failure before OPENED is authoritative noAd.
-                        if (terminal) {
-                            cleanup();
-                            return;
-                        }
-                    }
+                    // A generic SDK ERROR after show() does not prove an in-flight native view has ended.
+                    // Only synchronous show throw/rejection, CLOSED or foreground recovery releases that lease.
                     fail((0, runtime_1.adError)(error));
                 }));
                 if (!(0, runtime_1.isForeground)(env)) {
