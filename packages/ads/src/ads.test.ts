@@ -128,10 +128,11 @@ describe('끝까지 봤는가', () => {
     expect(s.calls.fail).toEqual(['광고를 끝까지 보지 않았어요']);
   });
 
-  it('닫힘 이벤트를 못 받아도 앱이 뒤로 갔다 돌아오면 닫힌 것으로 본다', async () => {
-    const s = setup();
+  it('iOS 기존 복구: 닫힘 이벤트를 못 받아도 앱이 뒤로 갔다 돌아오면 닫힌 것으로 본다', async () => {
+    const s = setup({ os: 'ios' });
     void s.ads.show({ ...s.cb });
     await flush();
+    vi.advanceTimersByTime(600); await flush();
     const ad = s.made[0];
     ad.emit(EV.LOADED); ad.emit(EV.OPENED); ad.emit(EV.EARNED_REWARD);
     s.toBg(); s.toFg();

@@ -46,6 +46,16 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
 
 describe('authoritative UMP privacy interface without advertising side effects', () => {
+  it('ending privacy settings never automatically restores a previously enabled banner request', async () => {
+    const s = setup(), banner = s.banner(); banner.mount(); await flush();
+    const request = banner.getState().request!; request.onAdLoaded({ width: 320, height: 50 });
+    const before = s.consent.gatherConsent.mock.calls.length;
+    expect((await s.privacy().show()).status).toBe('shown'); await flush();
+    expect(banner.getState()).toEqual({ height: 0, request: null });
+    request.onAdLoaded({ width: 320, height: 100 }); expect(banner.getState().height).toBe(0);
+    expect(s.consent.gatherConsent).toHaveBeenCalledTimes(before); expect(s.made).toHaveLength(0);
+    banner.unmount(); expect(s.listeners.size).toBe(0);
+  });
   it.each(['ios', 'android'])('reads SDK requirement and uses only UMP test-device options: %s', async (os) => {
     const s = setup(os); const privacy = s.privacy(); expect(privacy.available).toBe(true);
     expect(s.consent.requestInfoUpdate).not.toHaveBeenCalled(); s.noAds();

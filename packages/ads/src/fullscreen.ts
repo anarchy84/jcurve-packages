@@ -91,8 +91,10 @@ export function createFullscreen(env: AdsEnv, sdk: any) {
           if (disposed) return;
           if (state !== 'active') {
             sawBackground = true;
-            if (!opened && (state === 'background' || stage !== 'init')) abort();
-          } else if (sawBackground && (presented || opened)) finishClose();
+            // Android opens Google's AdActivity before OPENED can reach JS. AppState alone
+            // cannot distinguish this native presentation from Home; only the SDK can end it.
+            if (!opened && !(env.os() === 'android' && presented) && (state === 'background' || stage !== 'init')) abort();
+          } else if (env.os() !== 'android' && sawBackground && (presented || opened)) finishClose();
         }) ?? null;
         const prepared = await Promise.race([config.prepare(() => !disposed && !terminal), stopped]);
         if (disposed || terminal || prepared === null) return false;

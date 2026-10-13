@@ -16,6 +16,7 @@ function createBannerSession(props, width, env = (0, ads_1.defaultAdsEnv)()) {
     let stopped = true;
     let timer = null;
     let appSub = null;
+    let stopFullscreen = null;
     const listeners = new Set();
     const clearTimer = () => { if (timer !== null)
         clearTimeout(timer); timer = null; };
@@ -30,10 +31,10 @@ function createBannerSession(props, width, env = (0, ads_1.defaultAdsEnv)()) {
     const collapse = () => { generation++; clearTimer(); publish({ height: 0, request: null }); };
     const startRequest = async () => {
         collapse();
-        if (stopped || props.enabled === false || !available || !(0, runtime_1.isForeground)(env))
+        if (stopped || props.enabled === false || !available || !(0, runtime_1.isForeground)(env) || (0, runtime_1.isFullscreenActive)(env, sdk))
             return;
         const id = generation;
-        const current = () => !stopped && id === generation && (0, runtime_1.isForeground)(env);
+        const current = () => !stopped && id === generation && (0, runtime_1.isForeground)(env) && !(0, runtime_1.isFullscreenActive)(env, sdk);
         const fail = (error) => {
             if (!current())
                 return;
@@ -92,6 +93,14 @@ function createBannerSession(props, width, env = (0, ads_1.defaultAdsEnv)()) {
                 return;
             stopped = false;
             publish({ height: 0, request: null }, true);
+            stopFullscreen = (0, runtime_1.subscribeFullscreen)(env, sdk, (active, resumeRequests) => {
+                if (stopped)
+                    return;
+                if (active)
+                    collapse();
+                else if (resumeRequests && (0, runtime_1.isForeground)(env))
+                    void startRequest();
+            });
             try {
                 appSub = env.appState()?.addEventListener('change', (next) => {
                     if (stopped)
@@ -115,6 +124,8 @@ function createBannerSession(props, width, env = (0, ads_1.defaultAdsEnv)()) {
             }
             catch { /* noop */ }
             appSub = null;
+            stopFullscreen?.();
+            stopFullscreen = null;
         },
     };
 }

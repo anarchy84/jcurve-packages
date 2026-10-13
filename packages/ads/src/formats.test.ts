@@ -216,8 +216,8 @@ describe('presentation committed before SDK OPENED (independent-review regressio
     ad.emit(E.CLOSED);
     const next = s.normal(); const p = next.play(); await flush(); expect(s.made).toHaveLength(2); next.cancel(); await p;
   });
-  it.each(['inactive', 'background'])('background retains presentation until foreground recovery without OPENED: %s', async (state) => {
-    const s = setup(); const first = s.normal(); const result = first.play(); await flush();
+  it.each(['inactive', 'background'])('iOS retains presentation until foreground recovery without OPENED: %s', async (state) => {
+    const s = setup(); s.env.os = () => 'ios'; const first = s.normal(); const result = first.play(); await flush();
     s.made[0].emit(E.LOADED); s.change(state); expect(await result).toMatchObject({ cancelled: true, noAd: false });
     const otherEnv = { ...s.env, appState: () => ({ currentState: 'active', addEventListener: () => ({ remove: () => {} }) }) };
     const other = createInterstitial({ units: { interstitial: { android: 'unit' } }, test: true }, otherEnv);
@@ -266,6 +266,73 @@ describe('presentation committed before SDK OPENED (independent-review regressio
   });
 });
 
+describe('Android native AdActivity transition (2026-10-13 device regression)', () => {
+  it.each(['interstitial', 'rewarded', 'rewarded-interstitial'])('background before OPENED preserves exactly one native display and terminal: %s', async (format) => {
+    const s = setup(), first = format === 'interstitial' ? s.normal() : s.rewarded();
+    const opened = vi.fn(), closed = vi.fn(), failed = vi.fn(), aborted = vi.fn(), earned = vi.fn();
+    await first.show({ interstitial: format === 'rewarded-interstitial', onOpened: opened, onClosed: closed, onFail: failed, onAbort: aborted, onEarned: earned });
+    const ad = s.made[0]; ad.emit(E.LOADED);
+    s.change('background'); s.change('active'); // AdActivity resume can reach JS before the SDK event.
+    expect(aborted).not.toHaveBeenCalled(); expect(failed).not.toHaveBeenCalled(); expect(closed).not.toHaveBeenCalled();
+    expect((await s.normal().play()).busy).toBe(true); expect((await s.rewarded().play({})).busy).toBe(true);
+    ad.emit(E.OPENED); ad.emit(E.OPENED); expect(opened).toHaveBeenCalledTimes(1);
+    s.change('background'); s.change('active');
+    expect(closed).not.toHaveBeenCalled(); expect((await s.normal().play()).busy).toBe(true);
+    if (format !== 'interstitial') ad.emit(E.EARNED_REWARD);
+    ad.emit(E.CLOSED); ad.emit(E.CLOSED);
+    expect(closed).toHaveBeenCalledTimes(1); expect(aborted).not.toHaveBeenCalled(); expect(failed).not.toHaveBeenCalled();
+    expect(ad.shows).toBe(1); expect(s.made).toHaveLength(1); expect(s.listeners.size).toBe(0);
+    const next = s.normal(), p = next.play(); await flush(); expect(s.made).toHaveLength(2); next.cancel(); await p;
+  });
+  it.each(['interstitial', 'rewarded', 'rewarded-interstitial'])('actual presentation sequence completes play without a fabricated user cancellation: %s', async (format) => {
+    const s = setup(), first = format === 'interstitial' ? s.normal() : s.rewarded(), opened = vi.fn();
+    const result = first.play({ interstitial: format === 'rewarded-interstitial', onOpened: opened }); let settled = false;
+    void result.then(() => { settled = true; }); await flush();
+    const ad = s.made[0]; ad.emit(E.LOADED); s.change('background'); await flush();
+    expect(settled).toBe(false); ad.emit(E.OPENED); s.change('active'); await flush(); expect(settled).toBe(false);
+    if (format !== 'interstitial') ad.emit(E.EARNED_REWARD);
+    ad.emit(E.CLOSED); const final = await result;
+    expect(final).toMatchObject({ opened: true, noAd: false, busy: false }); expect(opened).toHaveBeenCalledTimes(1);
+    if (format === 'interstitial') expect(final).toMatchObject({ cancelled: false });
+    else expect(final).toMatchObject({ earned: true });
+  });
+  it.each(['cancel', 'timeout'])('UI feedback does not release Android presentation on foreground recovery: %s', async (mode) => {
+    const s = setup(), first = s.normal(), opened = vi.fn(), result = first.play({ onOpened: opened }); await flush();
+    const ad = s.made[0], lateOpen = [...ad.listeners.get(E.OPENED)!][0], lateClose = [...ad.listeners.get(E.CLOSED)!][0];
+    ad.emit(E.LOADED); s.change('background');
+    if (mode === 'cancel') first.cancel(); else vi.advanceTimersByTime(15_000);
+    expect(await result).toMatchObject({ opened: false, noAd: false }); s.change('active');
+    expect((await s.rewarded().play({})).busy).toBe(true); lateOpen(); expect(opened).not.toHaveBeenCalled();
+    lateClose(); const next = s.normal(), p = next.play(); await flush(); expect(s.made).toHaveLength(2);
+    lateOpen(); lateClose(); expect(opened).not.toHaveBeenCalled(); next.cancel(); await p;
+  });
+  it('SDK ERROR before OPENED releases the Android gate without CLOSED', async () => {
+    const s = setup(), first = s.normal(), result = first.play(); await flush();
+    s.made[0].emit(E.LOADED); s.change('background'); s.made[0].emit(E.ERROR, { code: 'null-activity' });
+    expect(await result).toMatchObject({ opened: false, noAd: true, cancelled: false });
+    s.change('active'); const next = s.normal(), p = next.play(); await flush(); expect(s.made).toHaveLength(2); next.cancel(); await p;
+  });
+  it.each(['consent', 'init', 'load'])('genuine app background before native show still cancels and ignores late SDK events: %s', async (stage) => {
+    const s = setup(); let release: () => void = () => {};
+    if (stage === 'consent') s.consent.gatherConsent.mockImplementation(() => new Promise((resolve) => { release = () => resolve({ canRequestAds: true }); }));
+    if (stage === 'init') s.sdk.default = () => ({ initialize: () => new Promise((resolve) => { release = () => resolve(undefined); }), setRequestConfiguration: async () => {} }) as any;
+    const first = s.normal(), opened = vi.fn(), result = first.play({ onOpened: opened }); await flush();
+    const ad = s.made[0], late = ad ? [...ad.listeners.values()].flatMap((set) => [...set]) : [];
+    s.change('background'); expect(await result).toMatchObject({ cancelled: true, noAd: true, opened: false });
+    release(); s.change('active'); for (const fn of late) fn(); await flush();
+    expect(opened).not.toHaveBeenCalled(); expect(ad?.shows ?? 0).toBe(0); expect(s.listeners.size).toBe(0);
+  });
+  it('saved stale OPENED/EARNED/CLOSED callbacks cannot affect a newer rewarded request', async () => {
+    const s = setup(), first = s.rewarded(), earned = vi.fn(), result = first.play({}); await flush();
+    const ad = s.made[0], callbacks = [...ad.listeners.values()].flatMap((set) => [...set]);
+    first.cancel(); await result;
+    const next = s.rewarded(), nextResult = next.play({ onOpened: earned }); await flush();
+    for (const callback of callbacks) callback();
+    expect(earned).not.toHaveBeenCalled(); expect(s.made[0].shows).toBe(0); expect(s.made[1].shows).toBe(0);
+    expect((await s.normal().play()).busy).toBe(true); next.cancel(); await nextResult;
+  });
+});
+
 describe('anchored adaptive banner native lifecycle', () => {
   it('only actual LOADED height expands, duplicate load is ignored and failure collapses', async () => {
     const s = setup(); const heights = vi.fn(); const loaded = vi.fn(); const fail = vi.fn();
@@ -305,5 +372,31 @@ describe('anchored adaptive banner native lifecycle', () => {
     b.mount(); await flush(); b.getState().request!.onAdLoaded({ width: 320, height: 0 }); expect(b.getState()).toEqual({ height: 0, request: null }); b.unmount();
     const c = createBannerSession({ units: { android: 'banner' }, test: true, onHeightChange: vi.fn() }, 320, s.env);
     c.mount(); await flush(); vi.advanceTimersByTime(15_000); expect(c.getState()).toEqual({ height: 0, request: null }); c.unmount();
+  });
+  it('a native fullscreen lease collapses a loaded banner and foreground before CLOSED cannot recreate it', async () => {
+    const s = setup(), heights = vi.fn(), banner = createBannerSession({ units: { android: 'banner' }, test: true, onHeightChange: heights }, 320, s.env);
+    banner.mount(); await flush(); const old = banner.getState().request!; old.onAdLoaded({ width: 320, height: 64 });
+    const normal = s.normal(), result = normal.play(); await flush(); expect(banner.getState()).toEqual({ height: 0, request: null });
+    const ad = s.made[0]; ad.emit(E.LOADED); s.change('background'); s.change('active'); await flush();
+    expect(banner.getState()).toEqual({ height: 0, request: null }); old.onAdLoaded({ width: 320, height: 100 }); old.onSizeChange({ width: 320, height: 100 });
+    expect(banner.getState().height).toBe(0); ad.emit(E.OPENED); ad.emit(E.CLOSED); await result; await flush();
+    const next = banner.getState().request!; expect(next).not.toBeNull(); expect(next.id).not.toBe(old.id);
+    next.onAdLoaded({ width: 320, height: 50 }); expect(banner.getState().height).toBe(50); banner.unmount(); expect(s.listeners.size).toBe(0);
+  });
+  it('fullscreen acquisition invalidates pending banner preparation, unmount removes the shared lease observer', async () => {
+    const s = setup(); let release!: () => void;
+    s.sdk.default = () => ({ initialize: () => new Promise((resolve) => { release = () => resolve(undefined); }), setRequestConfiguration: async () => {} }) as any;
+    const heights = vi.fn(), banner = createBannerSession({ units: { android: 'banner' }, test: true, onHeightChange: heights }, 320, s.env);
+    banner.mount(); await flush(); const first = s.normal(), result = first.play(); await flush();
+    release(); await flush(); expect(banner.getState()).toEqual({ height: 0, request: null });
+    s.made[0].emit(E.LOADED); s.change('background'); s.made[0].emit(E.OPENED); s.change('active');
+    banner.unmount(); const calls = heights.mock.calls.length; s.made[0].emit(E.CLOSED); await result; await flush();
+    expect(heights).toHaveBeenCalledTimes(calls); expect(banner.getState()).toEqual({ height: 0, request: null }); expect(s.listeners.size).toBe(0);
+  });
+  it('close while truly backgrounded waits for active before restoring the banner', async () => {
+    const s = setup(), first = s.normal(), result = first.play(); await flush();
+    const banner = createBannerSession({ units: { android: 'banner' }, test: true, onHeightChange: vi.fn() }, 320, s.env); banner.mount(); await flush();
+    s.made[0].emit(E.LOADED); s.change('background'); s.made[0].emit(E.OPENED); s.made[0].emit(E.CLOSED); await result; await flush();
+    expect(banner.getState()).toEqual({ height: 0, request: null }); s.change('active'); await flush(); expect(banner.getState().request).not.toBeNull(); banner.unmount();
   });
 });

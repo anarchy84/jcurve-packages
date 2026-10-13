@@ -36,7 +36,7 @@ export function createAdsPrivacy(options: AdsPrivacyOptions = {}, env: AdsEnv = 
   const run = (show: boolean): Promise<AdsPrivacyResult> => {
     if (!available) return Promise.resolve({ status: 'unavailable', info: UNKNOWN(), message: '이 빌드에서는 광고 개인정보 설정을 사용할 수 없어요' });
     if (!isForeground(env)) return Promise.resolve({ status: 'background', info: UNKNOWN(), message: '앱이 앞에 있을 때 개인정보 설정을 확인할 수 있어요' });
-    const fullscreen = show ? acquireFullscreen(env, sdk) : null;
+    const fullscreen = show ? acquireFullscreen(env, sdk, 'privacy') : null;
     if (show && !fullscreen) return Promise.resolve({ status: 'busy', info: UNKNOWN(), message: '다른 광고나 개인정보 설정이 진행 중이에요' });
     const form = acquireConsentForm(env, sdk, 'privacy');
     if (!form) {

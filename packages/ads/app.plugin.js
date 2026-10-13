@@ -30,6 +30,8 @@ module.exports = function withJcurveAds(config, props) {
 
     return c;
   });
+  // Android final files must align both the property and the root compiler classpath.
+  config = require('./kotlin.plugin')(config);
   const mediation = props && props.mediation;
   if (mediation === false) return config;
   const withMediation = require('./mediation.plugin');

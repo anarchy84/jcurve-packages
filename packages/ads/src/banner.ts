@@ -1,5 +1,5 @@
 import { defaultAdsEnv, type AdsEnv, type AdUnits } from './ads';
-import { adError, isForeground, prepareRequest, safeCall, type RequestPolicy } from './runtime';
+import { adError, isForeground, isFullscreenActive, prepareRequest, safeCall, subscribeFullscreen, type RequestPolicy } from './runtime';
 
 export type BannerDimensions = { width: number; height: number };
 export type AnchoredAdaptiveBannerProps = RequestPolicy & {
@@ -36,6 +36,7 @@ export function createBannerSession(props: AnchoredAdaptiveBannerProps, width: n
   let stopped = true;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let appSub: { remove: () => void } | null = null;
+  let stopFullscreen: (() => void) | null = null;
   const listeners = new Set<(state: BannerState) => void>();
   const clearTimer = () => { if (timer !== null) clearTimeout(timer); timer = null; };
   const publish = (next: BannerState, forceHeight = false) => {
@@ -47,9 +48,9 @@ export function createBannerSession(props: AnchoredAdaptiveBannerProps, width: n
   const collapse = () => { generation++; clearTimer(); publish({ height: 0, request: null }); };
   const startRequest = async () => {
     collapse();
-    if (stopped || props.enabled === false || !available || !isForeground(env)) return;
+    if (stopped || props.enabled === false || !available || !isForeground(env) || isFullscreenActive(env, sdk)) return;
     const id = generation;
-    const current = () => !stopped && id === generation && isForeground(env);
+    const current = () => !stopped && id === generation && isForeground(env) && !isFullscreenActive(env, sdk);
     const fail = (error: any) => {
       if (!current()) return;
       collapse();
@@ -92,6 +93,11 @@ export function createBannerSession(props: AnchoredAdaptiveBannerProps, width: n
       if (!stopped) return;
       stopped = false;
       publish({ height: 0, request: null }, true);
+      stopFullscreen = subscribeFullscreen(env, sdk, (active, resumeRequests) => {
+        if (stopped) return;
+        if (active) collapse();
+        else if (resumeRequests && isForeground(env)) void startRequest();
+      });
       try {
         appSub = env.appState()?.addEventListener('change', (next) => {
           if (stopped) return;
@@ -106,6 +112,8 @@ export function createBannerSession(props: AnchoredAdaptiveBannerProps, width: n
       collapse();
       try { appSub?.remove(); } catch { /* noop */ }
       appSub = null;
+      stopFullscreen?.();
+      stopFullscreen = null;
     },
   };
 }

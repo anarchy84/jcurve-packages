@@ -24,6 +24,26 @@
 앱에 있어야 하는 것: `react-native-google-mobile-ads` · `expo-tracking-transparency` · `expo-updates` · `expo-constants`(Expo 기본).
 1.7 은 네이티브 모듈(`JcurveTikTok`)이 들어 있어 **새 빌드**가 필요하다. 모듈이 없는 옛 빌드에 OTA 로 내려가도 틱톡만 조용히 꺼지고 나머지는 그대로 돈다.
 
+### 1.10.0 준비본: Android Kotlin 정렬
+
+설치된 **RNGMA 16.5.0 / Android GMA 25.4.0** 조합에서는 이 공용 플러그인이 최종
+`android/gradle.properties`의 `android.kotlinVersion`과 루트 `buildscript.dependencies`의 KGP를 함께 2.3.20으로 정렬한다.
+`mediation: false`에도 적용되며 앱에 별도의 classpath 수정 플러그인을 복제할 필요가 없다.
+`expo-build-properties`의 property override만으로 RN의 루트 KGP 2.1.20이 바뀌지 않은 실제 실패를 수정한다.
+
+기존 안정 버전이 더 높으면 가장 높은 값을 양쪽에 보존한다. 관찰된 2.1.20만 자동 승격하며,
+다른 낮은 버전·beta/RC·변수/동적 참조·비표준 Gradle 문법은 두 파일을 고치기 전에 오류로 멈춘다.
+해당 앱의 실제 컴파일러를 확인한 뒤 안정 버전으로 property와 root를 명시적으로 맞춰 다시 prebuild한다.
+다른 RNGMA/GMA 조합과 SDK 부재에서는 Kotlin 파일을 변경하지 않는다. iOS와 public JS 인터페이스는 그대로다.
+플러그인은 Expo Android `withFinalizedMod`에서 다른 표준 모드가 끝난 파일을 읽으므로 build-properties 플러그인 순서에 의존하지 않는다.
+
+진단 stage의 Gradle 9.3.1 / AGP 8.12.0 / KGP 2.3.20 / KSP 2.3.7 Release 빌드가 성공했다.
+Kotlin 공식 완전지원 범위의 Gradle 상한은 9.3.0이므로 9.3.1은 실제 성공 증거로만 기록한다.
+공용 플러그인으로 생성한 새 artifact의 전체 native 재검증과 공식 배포는 별도 게이트다.
+근거·제한·fixture 출처는 [native compatibility ADR](./ADR-native-compatibility.md),
+[Expo build-properties](https://docs.expo.dev/versions/latest/sdk/build-properties/),
+[Kotlin 호환 표](https://kotlinlang.org/docs/gradle-configure-project.html)에 있다.
+
 
 ## 미디에이션 — 광고 회사 5곳 기본(1.9)
 
@@ -170,6 +190,8 @@ export function LevelBanner({ units, test, enabled }: { units: AdUnits; test: bo
   로드 뒤 실제 양수 높이만 전달한다. `onSizeChange`만으로 로드 성공을 꾸며 내지 않는다.
 - 백그라운드에서는 네이티브 배너 뷰를 제거한다. 전경으로 돌아오면 현재 보이는 슬롯에서 새 요청을 시작한다.
   이전 인스턴스의 늦은 콜백은 무시한다. no-fill/로드 시간 초과는 즉시 접고 같은 전경 세션에서 자동 반복 요청하지 않는다.
+- 공통 전면 잠금이 잡히면 기존 배너와 준비 중 요청을 접는다. 전경으로 돌아와도 native 전면이 닫히기 전에는 요청하지 않는다.
+  광고 잠금이 실제로 끝난 뒤 활성 슬롯만 복원한다. 개인정보 폼 완료만으로 배너를 자동 요청하지 않는다.
 - 너비·활성 상태·광고 설정이 바뀌면 기존 뷰를 내리고 다시 준비한다. 하단 safe-area 위치·게임 버튼과의 간격은 앱 레이아웃이 정한다.
 
 ## 모든 형식의 공통 정책과 기존 호환성
@@ -184,7 +206,10 @@ export function LevelBanner({ units, test, enabled }: { units: AdUnits; test: bo
    보상형의 자동 ATT는 UMP → ATT → SDK 초기화 → 요청 순서다. 앱 루트에서 `requestTracking()`을 먼저 await하고 알림 권한을 요청하는 기존 계약도 유지한다.
 5. 보상형/보상형 전면/일반 전면은 **모든 factory 인스턴스 사이 공통 잠금 하나**를 쓴다.
    표시 요청을 시작한 광고를 시간만으로 강제 잠금 해제하던 경로는 제거했다. 15초 시간 초과는 대기 결과를 끝내지만
-   네이티브 표시를 시작했다면 잠금을 유지한다. 닫힘/전경 복귀 또는 OPENED 전 show 동기 예외/Promise 거절/SDK ERROR가 잠금 종료 근거다.
+   네이티브 표시를 시작했다면 잠금을 유지한다. Android는 SDK CLOSED 또는 OPENED 전 show 동기 예외/Promise 거절/SDK ERROR로 종료한다.
+   `show()` 뒤의 AppState background는 Google AdActivity일 수 있어 사용자 취소로 처리하지 않으며, active 복귀도 닫힘을 증명하지 않는다.
+   iOS는 기존 foreground recovery를 유지한다. 표시 전 INIT/LOADING의 실제 background 취소는 두 플랫폼 모두 유지한다.
+   Android 표시가 시작된 뒤 native 종료 이벤트가 오지 않으면 timeout/명시 cancel의 UI 결과와 별개로 잠금을 계속 보유한다.
 6. 광고 인스턴스는 요청마다 새로 만들고 리스너·타이머를 정리한다. 중복 LOADED/OPENED/EARNED/CLOSED와 정리 뒤 늦은 콜백을 차단한다.
    생성·warm·닫힘 직후에 다음 광고를 미리 요청하지 않는다. 개발 모드 또는 `test: true`는 Google TestIds를 사용한다.
 7. 광고 완료는 서버 SSV 지급 증명이 아니다. 이 패키지는 앱 지갑/아이템을 지급하지 않는다.
@@ -315,3 +340,12 @@ iOS `RNGoogleMobileAdsConsentModule.mm`의 UMP form completion과 Android
 TypeScript 빌드와 총 151개 테스트, pack 파일/타입/public export/SDK 없는 import를 생산자 단계에서 확인한다.
 새 개인정보 코드의 독립 검증과 무력화 실험은 별도 verifier가 수행하며, 작업자는 공식 push/tag/release나 앱 설치·실광고 요청을 하지 않는다.
 로컬 tgz가 만들어져도 1.10.0 공식 배포와 새 스토어 심사 상태는 별도로 확인한다.
+
+## 1.10.0 native compatibility 추가 생산자 점검
+
+`e9c5e3`의 151개 점검에서 Android의 일반 전면 광고가 실제로 표시돼도 AppState background로 먼저 취소되는 native 회귀가 발견됐다.
+새 점검은 실제 Gradle fixture의 정렬/높은 버전 보존/중복/비표준 설정 무변경, Android background→OPENED→CLOSED,
+명시 cancel/timeout 뒤 native 잠금, INIT/LOADING 취소, 배너 잠금/복원/언마운트 및 개인정보 폼 완료의 광고 부작용 방지를 포함한다.
+이전 Android foreground-close 가정은 native 증거에 맞춰 변경했고 해당 기존 iOS 복구 테스트는 별도로 보존한다.
+별도 verifier가 실제 Expo 모드 순서와 새 tgz의 native 광고 동작을 재검증한다. 생산자 테스트와 mutant 로그는 최종 합격이나 배포 증명이 아니다.
+생산자 단계에서 7개 파일의 222개 테스트와 TypeScript 빌드를 통과했고, 임시 복사본의 방어 코드 9종을 무력화하면 테스트가 실패하는 것을 확인한다.

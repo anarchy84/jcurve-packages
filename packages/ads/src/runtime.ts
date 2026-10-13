@@ -10,7 +10,8 @@ export type RequestPolicy = {
 
 export type RequestPrivacy = { requestNonPersonalizedAdsOnly: boolean };
 export type FullscreenLease = { release: () => void };
-type Session = { fullscreen: object | null; form: object | null; privacy: object | null; tracking: object | null; formWaiters: Set<() => void>; privacyRevision: number; consent: Promise<void> | null; init: Promise<unknown> | null; devices: Set<string>; configuration: Promise<void> };
+type FullscreenObserver = (active: boolean, resumeRequests: boolean) => void;
+type Session = { fullscreen: object | null; fullscreenObservers: Set<FullscreenObserver>; form: object | null; privacy: object | null; tracking: object | null; formWaiters: Set<() => void>; privacyRevision: number; consent: Promise<void> | null; init: Promise<unknown> | null; devices: Set<string>; configuration: Promise<void> };
 const sessions = new WeakMap<object, Session>();
 const fallback = {};
 
@@ -18,7 +19,7 @@ function sessionFor(env: AdsEnv, sdk: any): Session {
   const key = sdk ?? env.appState() ?? fallback;
   let session = sessions.get(key);
   if (!session) {
-    session = { fullscreen: null, form: null, privacy: null, tracking: null, formWaiters: new Set(), privacyRevision: 0, consent: null, init: null, devices: new Set(), configuration: Promise.resolve() };
+    session = { fullscreen: null, fullscreenObservers: new Set(), form: null, privacy: null, tracking: null, formWaiters: new Set(), privacyRevision: 0, consent: null, init: null, devices: new Set(), configuration: Promise.resolve() };
     sessions.set(key, session);
   }
   return session;
@@ -28,12 +29,29 @@ export function isForeground(env: AdsEnv): boolean {
   return env.appState()?.currentState === 'active';
 }
 
-export function acquireFullscreen(env: AdsEnv, sdk: any): FullscreenLease | null {
+export function isFullscreenActive(env: AdsEnv, sdk: any): boolean {
+  return !!sessionFor(env, sdk).fullscreen;
+}
+
+/** Internal request observers never release a native lease or control SDK callbacks. */
+export function subscribeFullscreen(env: AdsEnv, sdk: any, observer: FullscreenObserver): () => void {
+  const observers = sessionFor(env, sdk).fullscreenObservers;
+  observers.add(observer);
+  return () => { observers.delete(observer); };
+}
+
+export function acquireFullscreen(env: AdsEnv, sdk: any, kind: 'ad' | 'privacy' = 'ad'): FullscreenLease | null {
   const session = sessionFor(env, sdk);
   if (session.fullscreen) return null;
   const token = {};
   session.fullscreen = token;
-  return { release: () => { if (session.fullscreen === token) session.fullscreen = null; } };
+  for (const observer of [...session.fullscreenObservers]) safeCall(observer, true, false);
+  return { release: () => {
+    if (session.fullscreen !== token) return;
+    session.fullscreen = null;
+    // Privacy settings must not start an ad request merely because Google's form ended.
+    for (const observer of [...session.fullscreenObservers]) safeCall(observer, false, kind === 'ad');
+  } };
 }
 
 /** UMP updates/forms share one gate; privacy operations also block banner/request preparation. */
