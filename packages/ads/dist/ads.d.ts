@@ -1,9 +1,10 @@
+import { type RequestPolicy } from './runtime';
 /** 플랫폼마다 따로인 광고 단위 ID */
 export type AdUnits = {
     android?: string;
     ios?: string;
 };
-export type AdsOptions = {
+export type AdsOptions = RequestPolicy & {
     units: {
         /** 보상형 — 「광고 보고 받기」 */
         rewarded: AdUnits;
@@ -141,6 +142,7 @@ export type AdsEnv = {
     appState: () => AppStateLike | null;
     dev: () => boolean;
 };
+export declare const defaultAdsEnv: () => AdsEnv;
 /** ATT 를 물은 결과 — timedOut 이면 창이 아직 떠 있을 수 있다(다음 권한 창 전에 앱이 앞으로 돌아오길 기다린다) */
 export type TrackingResult = {
     status: string;
