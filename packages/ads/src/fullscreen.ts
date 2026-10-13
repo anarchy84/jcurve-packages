@@ -131,8 +131,13 @@ export function createFullscreen(env: AdsEnv, sdk: any) {
         offs.push(ad.addAdEventListener(events.CLOSED, finishClose));
         offs.push(ad.addAdEventListener(events.ERROR, (error: any) => {
           if (disposed || closed) return;
-          // A generic SDK ERROR after show() does not prove an in-flight native view has ended.
-          // Only synchronous show throw/rejection, CLOSED or foreground recovery releases that lease.
+          // RNGMA 16.5 iOS delegate maps didFailToPresentFullScreenContentWithError to ERROR,
+          // and dismissal to a separate CLOSED event. Failure before OPENED is authoritative;
+          // waiting for CLOSED here can leave the SDK-wide lease permanently stuck.
+          if (!opened) {
+            presented = false;
+            if (terminal) { cleanup(); return; } // Keep an existing cancel/failure result exactly once.
+          }
           fail(adError(error));
         }));
         if (!isForeground(env)) { abort(); return false; }

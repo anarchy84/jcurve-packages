@@ -252,18 +252,17 @@ describe('presentation committed before SDK OPENED (independent-review regressio
     await flush(); expect(fail).not.toHaveBeenCalled(); expect(s.listeners.size).toBe(0);
     const next = s.rewarded(); const p = next.play({}); await flush(); expect(s.made).toHaveLength(2); next.cancel(); await p;
   });
-  it('generic ERROR after show before OPENED reports uncertainty and retains lease until CLOSED', async () => {
+  it('SDK didFailToPresent ERROR before OPENED confirms noAd and permits retry without CLOSED', async () => {
     const s = setup(); const controller = s.normal(); const result = controller.play(); await flush();
     s.made[0].emit(E.LOADED); s.made[0].emit(E.ERROR, { code: 'native' });
-    expect(await result).toMatchObject({ opened: false, noAd: false, busy: false });
-    expect((await s.rewarded().play({})).busy).toBe(true); expect(s.made).toHaveLength(1);
-    s.made[0].emit(E.CLOSED); expect(s.listeners.size).toBe(0);
+    expect(await result).toMatchObject({ opened: false, noAd: true, busy: false }); expect(s.listeners.size).toBe(0);
+    const next = s.rewarded(); const p = next.play({}); await flush(); expect(s.made).toHaveLength(2); next.cancel(); await p;
   });
-  it('generic ERROR after cancelled presentation cannot unlock or deliver a second terminal', async () => {
+  it('SDK presentation ERROR after cancel releases lease without a second terminal', async () => {
     const s = setup(); const controller = s.normal(); const abort = vi.fn(); const fail = vi.fn();
     await controller.show({ onAbort: abort, onFail: fail }); s.made[0].emit(E.LOADED); controller.cancel(); s.made[0].emit(E.ERROR, { code: 'native' });
-    expect(abort).toHaveBeenCalledTimes(1); expect(fail).not.toHaveBeenCalled(); expect((await s.rewarded().play({})).busy).toBe(true);
-    s.made[0].emit(E.CLOSED); expect(s.listeners.size).toBe(0);
+    expect(abort).toHaveBeenCalledTimes(1); expect(fail).not.toHaveBeenCalled(); expect(s.listeners.size).toBe(0);
+    const next = s.rewarded(); const p = next.play({}); await flush(); expect(s.made).toHaveLength(2); next.cancel(); await p;
   });
 });
 
