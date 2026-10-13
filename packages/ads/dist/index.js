@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.tiktokSecret = exports.tiktokKeys = exports.tiktokIds = exports.tiktokEventFor = exports.createTikTok = exports.useTestAdUnit = exports.ssvRequestOptions = exports.readUpdateChannel = exports.isTestAds = exports.AnchoredAdaptiveBanner = exports.createInterstitial = exports.createRewarded = void 0;
+exports.tiktokSecret = exports.tiktokKeys = exports.tiktokIds = exports.tiktokEventFor = exports.createTikTok = exports.useTestAdUnit = exports.ssvRequestOptions = exports.readUpdateChannel = exports.isTestAds = exports.createAdsPrivacy = exports.AnchoredAdaptiveBanner = exports.createInterstitial = exports.createRewarded = void 0;
 /**
  * `@jcurve/ads` — 공용 AdMob 보상형 · 일반 전면 · 적응형 배너 광고.
  *
@@ -84,6 +84,8 @@ var interstitial_1 = require("./interstitial");
 Object.defineProperty(exports, "createInterstitial", { enumerable: true, get: function () { return interstitial_1.createInterstitial; } });
 var banner_1 = require("./banner");
 Object.defineProperty(exports, "AnchoredAdaptiveBanner", { enumerable: true, get: function () { return banner_1.AnchoredAdaptiveBanner; } });
+var privacy_1 = require("./privacy");
+Object.defineProperty(exports, "createAdsPrivacy", { enumerable: true, get: function () { return privacy_1.createAdsPrivacy; } });
 var mode_1 = require("./mode");
 Object.defineProperty(exports, "isTestAds", { enumerable: true, get: function () { return mode_1.isTestAds; } });
 Object.defineProperty(exports, "readUpdateChannel", { enumerable: true, get: function () { return mode_1.readUpdateChannel; } });

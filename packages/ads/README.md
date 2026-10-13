@@ -1,14 +1,15 @@
 # @jcurve/ads
 
-공용 **광고** 패키지 — AdMob 보상형 · 일반 전면 · 적응형 배너 · iOS 추적 허용(ATT) · 광고 식별자 · 틱톡 광고 전환.
+공용 **광고** 패키지 — AdMob 보상형 · 일반 전면 · 적응형 배너 · UMP 개인정보 설정 · iOS 추적 허용(ATT) · 광고 식별자 · 틱톡 광고 전환.
 「광고는 전부 이 패키지」(2026-10-02 대표님). 앱마다 다른 것은 **설정값**(광고 단위 ID · 어드민 설정 그룹 이름)뿐이다.
 왜 이렇게 생겼는지(꼬꼬농장 실기기에서 밟은 것들)는 `src/index.ts` 머리말에 있다.
 
 ## 설치
 
-이 브랜치의 일반 전면/배너 API는 **기여 후보 계약**이며 공식 출시 API가 아니다. 후보 버전은
-`1.10.0-arcana.20261013`이다. 현재 앱의 공식 1.9.1 설치·스토어 제출물을 이 기여 작업에서 교체하지 않는다.
-아래 설치 주소는 기존 공식판이다. 후보는 저장소의 `packages/ads`를 빌드/pack하여 검토하며 공식 배포는 별도 절차다.
+이 브랜치는 **1.10.0 공식 릴리스 준비본**이다. package version과 로컬 tgz 준비는 공식 배포 증명이 아니다.
+2026-10-13 준비 시점에는 1.10.0 공식 tag/release artifact를 아직 배포하지 않았다.
+일반 전면/배너/개인정보 설정의 공식 앱 적용은 공식 저장소 릴리스와 실제 artifact 확인 후 진행한다.
+아래 설치 주소는 기존 공식 1.9.1이다. 작업자의 pack 산출물은 공식 릴리스 asset으로 취급하지 않는다.
 
 ```jsonc
 // package.json
@@ -107,7 +108,7 @@ else toast(r.message ?? '광고를 보지 못했어요');   // r.noAd 면 「잠
 앱에 따로 넣은 `modules/tiktok-business/` · `src/tiktok*.ts` 는 **지운다**(패키지 모듈은 이름이 `JcurveTikTok` 이라 겹치지는 않지만,
 둘 다 있으면 같은 이벤트가 두 번 나간다). `expo-build-properties` 의 JitPack 줄은 남겨도 된다(플러그인이 겹치면 건너뛴다).
 
-## 기여 후보: 일반 전면 광고
+## 1.10.0 릴리스 준비: 일반 전면 광고
 
 `createInterstitial(options, env?)`는 보상형과 다른 SDK `InterstitialAd`를 사용한다. 보상·SSV 입력과
 `earned` 결과가 없다. 서버가 정한 광고 위치·빈도와 광고 단위는 앱에서 넘긴다.
@@ -141,7 +142,7 @@ export async function playLevelTransition(ads: ReturnType<typeof createLevelTran
   네이티브 show 동기 예외/Promise 거절 또는 SDK ERROR가 OPENED 전에 도착하면 표시 실패가 확정돼 잠금을 정리한다.
   OPENED 후 ERROR는 이미 열린 화면의 종료 근거로 쓰지 않고 CLOSED/전경 복귀를 기다린다.
 
-## 기여 후보: anchored adaptive banner
+## 1.10.0 릴리스 준비: anchored adaptive banner
 
 앱은 `AnchoredAdaptiveBanner`만 사용하며 `react-native-google-mobile-ads`를 직접 import하지 않는다.
 Google `BannerAd`의 `ANCHORED_ADAPTIVE_BANNER`와 실제 `onAdLoaded({ width, height })`를 사용한다.
@@ -229,3 +230,88 @@ git diff --check
 따라서 OPENED 전 ERROR에서 CLOSED를 무조건 기다리면 다음 광고가 계속 busy가 될 수 있다.
 명확한 SDK 실패는 잠금을 풀되 취소/백그라운드/시간 초과만으로 표시 실패를 추정하지 않는다.
 이 경로는 `formats.test.ts`의 SDK 표시 실패 후 CLOSED 없이 재시도, 취소 뒤 ERROR의 중복 종료 방지 테스트가 지킨다.
+
+## 1.10.0 릴리스 준비: UMP 광고 개인정보 설정
+
+개인정보 설정에서 앱은 `createAdsPrivacy()`를 사용한다. Google SDK import나 폼 호출을 앱에 복제하지 않는다.
+이 API는 광고 SDK 초기화·테스트 광고 기기 등록·광고 인스턴스 생성·load·보상/지갑 지급을 하지 않는다.
+`testDevices`는 UMP `requestInfoUpdate({ testDeviceIdentifiers })` 옵션에만 전달한다.
+
+```ts
+import { createAdsPrivacy, type AdsPrivacyResult } from '@jcurve/ads';
+
+const privacy = createAdsPrivacy();
+
+export async function readPrivacyEntry(): Promise<{ visible: boolean; result: AdsPrivacyResult }> {
+  const result = await privacy.getStatus();
+  return { visible: result.info.requirement === 'required', result };
+}
+
+export async function openPrivacySettings(): Promise<AdsPrivacyResult> {
+  return privacy.show();
+}
+
+export function cancelPrivacyWaiting(): void {
+  privacy.cancel();
+}
+```
+
+`createAdsPrivacy(options = {}, env?)` 반환 계약:
+
+- `available: boolean`: iOS/Android 네이티브 SDK에서 필요한 UMP 함수가 존재한다. 실행 가능 상태/동의 여부와는 별개다.
+- `getStatus(): Promise<AdsPrivacyResult>`: SDK `requestInfoUpdate()` 후 `getConsentInfo()`를 읽는다. 폼을 열지 않는다.
+- `show(): Promise<AdsPrivacyResult>`: 상태를 다시 조회하고 SDK가 REQUIRED라고 보고했을 때만
+  `showPrivacyOptionsForm()`을 호출한다. 종료 후 SDK `getConsentInfo()`를 다시 읽으며 폼 반환값을 보상이나 광고 허용으로 추정하지 않는다.
+- `cancel()`: 이 인스턴스의 JS 기다리기를 끝낸다. Google의 실제 네이티브 폼/정보 갱신 작업은 종료 이벤트까지 잠금을 유지한다.
+- options: 선택 `testDevices: string[]`만 있다. 환경 교체(`env`)는 기존 `AdsEnv`의 테스트 주입 계약을 사용한다.
+
+```ts
+type AdsPrivacyInfo = {
+  requirement: 'required' | 'not-required' | 'unknown';
+  canRequestAds: boolean | null;
+};
+type AdsPrivacyResult = {
+  status: 'checked' | 'shown' | 'not-required' | 'unknown' | 'busy' | 'cancelled'
+    | 'timeout' | 'unavailable' | 'background' | 'error';
+  info: AdsPrivacyInfo;
+  message?: string;
+};
+```
+
+`checked`는 조회 완료, `shown`은 SDK 폼 완료와 이후 상태 재조회 완료다. `show`라는 status 문자열은 없다.
+`not-required`/`unknown`에서는 폼을 열지 않는다. requirement는 SDK의
+`privacyOptionsRequirementStatus`를 그대로 구분하며 canRequestAds로 필요 여부를 추정하지 않는다.
+SDK의 boolean이 없으면 `canRequestAds: null`로 반환한다. 미지원·busy·취소·시간 초과·오류는
+`{ requirement: 'unknown', canRequestAds: null }`로 돌아오며 이전 상태를 새 확인값처럼 전달하지 않는다.
+정보 갱신 오류에서 실제 SDK의 기존 정보 조회가 성공하면 그 SDK 상태와 갱신 실패 안내를 반환한다.
+
+동작 규칙:
+
+1. 생성은 아무 요청도 하지 않는다. 조회/표시 시작 및 각 네이티브 호출 직전에 AppState active를 확인한다.
+   SDK 없음·Expo Go·웹은 unavailable, 처음부터 전경이 아니면 background다.
+2. 모든 privacy 인스턴스·UMP gatherConsent·공용 ATT는 공통 폼 잠금을 쓴다. privacy show는 공용 전면 광고 잠금도 확보한다.
+   이미 진행 중인 폼/전면 광고를 가로채지 않는다. 앱 시작의 `requestTracking()`은 다른 UMP 작업 종료를 기다리므로 두 폼이 겹치지 않는다.
+3. 개인정보 조회/폼이 진행 중이면 새 보상형/일반 전면/배너 준비를 막으며 종료 후 자동 광고를 예약하지 않는다.
+   개인정보 설정 화면의 기존 배너는 앱이 `enabled: false`로 내려야 한다.
+4. 대기는 최대 45초다. 취소/timeout/background로 JS 결과를 반환해도 네이티브 UMP 작업의 Promise가 실제로 끝날 때까지
+   잠금을 유지한다. 취소 뒤 늦은 응답으로 폼을 새로 열거나 최종 결과를 두 번 반환하지 않는다.
+   폼 표시 중 iOS inactive는 허용하며 실제 background는 JS 대기를 취소한다.
+5. 개인정보 작업 종료 후 기존 동의 memo를 지우고 다음 **명시적** 광고 시도에서 SDK canRequestAds를 재확인한다.
+   개인정보 변경 전에 시작된 배너 준비는 작업 종료 뒤 초기화가 늦게 완료돼도 과거 동의로 요청을 재개하지 않는다.
+   SDK canRequestAds false/null은 광고 요청에 사용하지 않는다.
+6. ATT의 기존 20초 timeout도 네이티브 답이 오기 전 폼 잠금을 풀지 않는다. 광고 설정 변경이나 폼 결과는
+   서버 SSV 보상 확정/아이템 grant/consume의 대체 근거가 아니다.
+
+SDK 근거: RNGMA 16.5.0 `src/specs/modules/NativeConsentModule.ts`의
+`AdsConsentPrivacyOptionsRequirementStatus`와 `showPrivacyOptionsForm(): Promise<AdsConsentInfo>`.
+iOS `RNGoogleMobileAdsConsentModule.mm`의 UMP form completion과 Android
+`ReactNativeGoogleMobileAdsConsentModule.java`의 `UserMessagingPlatform.showPrivacyOptionsForm` completion 뒤
+실제 consent info가 반환되는 것을 확인했다. [Google UMP privacy options 가이드](https://developers.google.com/admob/ios/privacy#privacy_options)를 함께 따른다.
+
+## 1.10.0 추가 생산자 점검 (2026-10-13)
+
+기준 `bedf9e48ac2574106946a9f4adfe3f7d61c42305`의 기존 광고 경로 111개 테스트를 유지하고,
+개인정보 상태/폼/취소/timeout/캐시 재검증/배너 준비 경합/공용 ATT 폼 잠금 테스트 40개를 추가했다.
+TypeScript 빌드와 총 151개 테스트, pack 파일/타입/public export/SDK 없는 import를 생산자 단계에서 확인한다.
+새 개인정보 코드의 독립 검증과 무력화 실험은 별도 verifier가 수행하며, 작업자는 공식 push/tag/release나 앱 설치·실광고 요청을 하지 않는다.
+로컬 tgz가 만들어져도 1.10.0 공식 배포와 새 스토어 심사 상태는 별도로 확인한다.

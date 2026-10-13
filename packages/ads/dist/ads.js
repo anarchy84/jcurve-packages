@@ -112,17 +112,46 @@ function createRewarded(opts, env = (0, exports.defaultAdsEnv)()) {
                 await whenActive();
                 await new Promise((r) => setTimeout(r, SETTLE_MS));
                 const cur = (await withTimeout(att.getTrackingPermissionsAsync(), 3000));
-                if (cur?.status !== 'undetermined')
-                    return { status: String(cur?.status ?? 'unknown'), timedOut: false }; // 이미 답했다 — 다시 묻지 않는다
+                if (cur?.status !== 'undetermined') {
+                    if (!cur?.status)
+                        forget();
+                    return { status: String(cur?.status ?? 'unknown'), timedOut: false };
+                } // 이미 답했다 — 다시 묻지 않는다
+                const form = await (0, runtime_1.waitForTrackingForm)(env, mod);
+                if (!form) {
+                    forget();
+                    return { status: 'undetermined', timedOut: true };
+                }
+                if (env.appState()?.currentState !== 'active') {
+                    form.release();
+                    forget();
+                    return { status: 'undetermined', timedOut: false };
+                }
+                const latest = (await withTimeout(Promise.resolve().then(() => att.getTrackingPermissionsAsync()), 3000));
+                if (latest?.status !== 'undetermined') {
+                    form.release();
+                    if (!latest?.status)
+                        forget();
+                    return { status: String(latest?.status ?? 'unknown'), timedOut: false };
+                }
                 /*
                  | 20초 시간 초과와 창이 닫힌 것을 가른다(민트런 시험 2026-10-01) — 시간 초과면 창이 아직 떠 있을 수 있어
                  | 앱은 다음 권한 창(알림)을 부르기 전에 앱이 앞으로 돌아오는 것(AppState active)을 더 기다려야 한다.
                  */
                 let timedOut = false;
+                let timeout = null;
+                const native = Promise.resolve().then(() => {
+                    if (env.appState()?.currentState !== 'active')
+                        throw new Error('앱이 앞에 있을 때 추적 동의를 확인할 수 있어요');
+                    return att.requestTrackingPermissionsAsync();
+                });
+                void native.then(() => form.release(), () => form.release()); // Real native completion owns the lease.
                 const after = (await Promise.race([
-                    att.requestTrackingPermissionsAsync().catch(() => null),
-                    new Promise((r) => setTimeout(() => { timedOut = true; r(null); }, 20000)),
+                    native.catch(() => null),
+                    new Promise((r) => { timeout = setTimeout(() => { timedOut = true; r(null); }, 20000); }),
                 ]));
+                if (timeout !== null)
+                    clearTimeout(timeout);
                 if (!after || after.status === 'undetermined')
                     forget(); // 창 없이 넘어갔거나 시간 초과 — 다음 호출에 다시 묻는다
                 return { status: String(after?.status ?? 'undetermined'), timedOut };

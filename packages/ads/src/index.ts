@@ -82,6 +82,8 @@ export type { Interstitial, InterstitialOptions, InterstitialShowOptions, Inters
 export { AnchoredAdaptiveBanner } from './banner';
 export type { AnchoredAdaptiveBannerProps, BannerDimensions } from './banner';
 export type { RequestPolicy } from './runtime';
+export { createAdsPrivacy } from './privacy';
+export type { AdsPrivacy, AdsPrivacyOptions, AdsPrivacyInfo, AdsPrivacyRequirement, AdsPrivacyResult, AdsPrivacyStatus } from './privacy';
 export { isTestAds, readUpdateChannel, ssvRequestOptions, useTestAdUnit } from './mode';
 export { createTikTok } from './tiktok';
 export type { TikTok, TikTokEnv, TikTokNative, TikTokOptions } from './tiktok';

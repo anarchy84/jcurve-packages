@@ -14,6 +14,11 @@ export type FullscreenLease = {
 };
 export declare function isForeground(env: AdsEnv): boolean;
 export declare function acquireFullscreen(env: AdsEnv, sdk: any): FullscreenLease | null;
+/** UMP updates/forms share one gate; privacy operations also block banner/request preparation. */
+export declare function acquireConsentForm(env: AdsEnv, sdk: any, kind?: 'consent' | 'privacy' | 'tracking'): FullscreenLease | null;
+/** Public ATT may be requested at startup while UMP refreshes; wait instead of overlapping dialogs. */
+export declare function waitForTrackingForm(env: AdsEnv, sdk: any): Promise<FullscreenLease | null>;
+export declare function invalidateConsent(env: AdsEnv, sdk: any): void;
 export declare function bounded<T>(promise: Promise<T>, ms: number, message: string): Promise<T>;
 /** Failed UMP refresh may use a still-valid previous consent, never a fabricated one. */
 export declare function prepareRequest(env: AdsEnv, sdk: any, policy: RequestPolicy, stillNeeded?: () => boolean, beforeInitialize?: () => Promise<void>): Promise<RequestPrivacy>;

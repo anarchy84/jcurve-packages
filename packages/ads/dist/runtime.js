@@ -2,6 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.isForeground = isForeground;
 exports.acquireFullscreen = acquireFullscreen;
+exports.acquireConsentForm = acquireConsentForm;
+exports.waitForTrackingForm = waitForTrackingForm;
+exports.invalidateConsent = invalidateConsent;
 exports.bounded = bounded;
 exports.prepareRequest = prepareRequest;
 exports.safeCall = safeCall;
@@ -12,7 +15,7 @@ function sessionFor(env, sdk) {
     const key = sdk ?? env.appState() ?? fallback;
     let session = sessions.get(key);
     if (!session) {
-        session = { fullscreen: null, consent: null, init: null, devices: new Set(), configuration: Promise.resolve() };
+        session = { fullscreen: null, form: null, privacy: null, tracking: null, formWaiters: new Set(), privacyRevision: 0, consent: null, init: null, devices: new Set(), configuration: Promise.resolve() };
         sessions.set(key, session);
     }
     return session;
@@ -29,6 +32,53 @@ function acquireFullscreen(env, sdk) {
     return { release: () => { if (session.fullscreen === token)
             session.fullscreen = null; } };
 }
+/** UMP updates/forms share one gate; privacy operations also block banner/request preparation. */
+function acquireConsentForm(env, sdk, kind = 'consent') {
+    const session = sessionFor(env, sdk);
+    if (session.form)
+        return null;
+    const token = {};
+    session.form = token;
+    if (kind === 'privacy') {
+        session.privacy = token;
+        session.privacyRevision++;
+    }
+    if (kind === 'tracking')
+        session.tracking = token;
+    return { release: () => {
+            if (session.form !== token)
+                return;
+            session.form = null;
+            if (session.privacy === token)
+                session.privacy = null;
+            if (session.tracking === token)
+                session.tracking = null;
+            for (const wake of [...session.formWaiters])
+                wake();
+        } };
+}
+/** Public ATT may be requested at startup while UMP refreshes; wait instead of overlapping dialogs. */
+function waitForTrackingForm(env, sdk) {
+    const immediate = acquireConsentForm(env, sdk, 'tracking');
+    if (immediate)
+        return Promise.resolve(immediate);
+    const session = sessionFor(env, sdk);
+    return new Promise((resolve) => {
+        const timer = setTimeout(() => { session.formWaiters.delete(wake); resolve(null); }, 45000);
+        const wake = () => {
+            const lease = acquireConsentForm(env, sdk, 'tracking');
+            if (!lease)
+                return;
+            clearTimeout(timer);
+            session.formWaiters.delete(wake);
+            resolve(lease);
+        };
+        session.formWaiters.add(wake);
+    });
+}
+function invalidateConsent(env, sdk) {
+    sessionFor(env, sdk).consent = null;
+}
 function bounded(promise, ms, message) {
     return new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error(message)), ms);
@@ -37,28 +87,43 @@ function bounded(promise, ms, message) {
 }
 /** Failed UMP refresh may use a still-valid previous consent, never a fabricated one. */
 async function prepareRequest(env, sdk, policy, stillNeeded = () => true, beforeInitialize) {
+    const session = sessionFor(env, sdk);
+    const revision = session.privacyRevision;
     const check = () => {
         if (!stillNeeded())
             throw new Error('광고를 그만뒀어요');
         if (!isForeground(env))
             throw new Error('앱이 앞에 있을 때 광고를 요청할 수 있어요');
+        if (session.privacy)
+            throw new Error('광고 개인정보 설정이 끝난 뒤 다시 시도해 주세요');
+        if (session.tracking)
+            throw new Error('추적 동의 확인이 끝난 뒤 다시 시도해 주세요');
+        if (session.privacyRevision !== revision)
+            throw new Error('광고 개인정보 설정이 바뀌었어요. 다시 시도해 주세요');
     };
     check();
-    const session = sessionFor(env, sdk);
     const consent = sdk?.AdsConsent;
     if (!consent?.gatherConsent || !consent?.getConsentInfo)
         throw new Error('광고 동의를 확인할 수 없어요');
     if (!session.consent) {
+        const form = acquireConsentForm(env, sdk);
+        if (!form)
+            throw new Error('광고 동의 확인이 이미 진행 중이에요');
         const pending = (async () => {
             try {
-                await Promise.resolve(consent.gatherConsent({ testDeviceIdentifiers: policy.testDevices ?? [] }));
+                try {
+                    await Promise.resolve(consent.gatherConsent({ testDeviceIdentifiers: policy.testDevices ?? [] }));
+                }
+                catch {
+                    // getConsentInfo below is the sole authority, including cached consent on network failure.
+                }
+                const info = await bounded(Promise.resolve(consent.getConsentInfo()), 5000, '광고 동의를 확인할 수 없어요');
+                if (info?.canRequestAds !== true)
+                    throw new Error('광고 요청에 필요한 동의가 없어요');
             }
-            catch {
-                // getConsentInfo below is the sole authority, including cached consent on network failure.
+            finally {
+                form.release(); // Actual native operation completion, never the caller's timeout/cancel.
             }
-            const info = await bounded(Promise.resolve(consent.getConsentInfo()), 5000, '광고 동의를 확인할 수 없어요');
-            if (info?.canRequestAds !== true)
-                throw new Error('광고 요청에 필요한 동의가 없어요');
         })();
         session.consent = pending;
         void pending.catch(() => { if (session.consent === pending)
