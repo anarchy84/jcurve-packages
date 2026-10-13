@@ -15,6 +15,7 @@ export type InterstitialShowOptions = {
 export type InterstitialResult = {
     opened: boolean;
     busy: boolean;
+    /** true only when absence is confirmed; in-flight native presentation is false even without OPENED. */
     noAd: boolean;
     cancelled: boolean;
     message?: string;

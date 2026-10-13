@@ -205,6 +205,55 @@ describe('foreground, no-fill and preparation', () => {
   });
 });
 
+describe('presentation committed before SDK OPENED (independent-review regressions)', () => {
+  it.each(['interstitial', 'rewarded', 'rewarded-interstitial'])('cancel retains native lease and does not assert noAd: %s', async (format) => {
+    const s = setup(); const first = format === 'interstitial' ? s.normal() : s.rewarded();
+    const result = first.play({ interstitial: format === 'rewarded-interstitial' }); await flush();
+    const ad = s.made[0]; ad.emit(E.LOADED); first.cancel();
+    expect(await result).toMatchObject({ opened: false, busy: false, noAd: false });
+    expect((await s.normal().play()).busy).toBe(true); expect(s.made).toHaveLength(1);
+    ad.emit(E.OPENED); // Late OPENED only updates internal lifecycle, never reopens app callbacks/results.
+    ad.emit(E.CLOSED);
+    const next = s.normal(); const p = next.play(); await flush(); expect(s.made).toHaveLength(2); next.cancel(); await p;
+  });
+  it.each(['inactive', 'background'])('background retains presentation until foreground recovery without OPENED: %s', async (state) => {
+    const s = setup(); const first = s.normal(); const result = first.play(); await flush();
+    s.made[0].emit(E.LOADED); s.change(state); expect(await result).toMatchObject({ cancelled: true, noAd: false });
+    const otherEnv = { ...s.env, appState: () => ({ currentState: 'active', addEventListener: () => ({ remove: () => {} }) }) };
+    const other = createInterstitial({ units: { interstitial: { android: 'unit' } }, test: true }, otherEnv);
+    expect((await other.play()).busy).toBe(true); expect(s.made).toHaveLength(1);
+    s.change('active'); const next = s.normal(); const p = next.play(); await flush(); expect(s.made).toHaveLength(2); next.cancel(); await p;
+  });
+  it('presentation timeout returns failure without releasing an in-flight native lease', async () => {
+    const s = setup(); const result = s.normal().play(); await flush(); s.made[0].emit(E.LOADED);
+    vi.advanceTimersByTime(15_000); expect(await result).toMatchObject({ opened: false, noAd: false, busy: false });
+    expect((await s.rewarded().play({})).busy).toBe(true); expect(s.made).toHaveLength(1); s.made[0].emit(E.CLOSED); expect(s.listeners.size).toBe(0);
+  });
+  it('CLOSED without OPENED calls exactly one terminal callback', async () => {
+    const s = setup(); const terminal: string[] = [];
+    await s.normal().show({ onClosed: () => terminal.push('closed'), onFail: () => terminal.push('fail'), onAbort: () => terminal.push('abort') });
+    s.made[0].emit(E.LOADED); s.made[0].emit(E.CLOSED); s.made[0].emit(E.CLOSED);
+    expect(terminal).toEqual(['fail']); expect(s.listeners.size).toBe(0);
+  });
+  it('iOS UMP and ATT complete before SDK initialization or rewarded request', async () => {
+    const s = setup(); s.env.os = () => 'ios'; let status = 'undetermined';
+    s.env.tracking = () => ({ getTrackingPermissionsAsync: async () => ({ status }), requestTrackingPermissionsAsync: async () => { s.order.push('att'); status = 'denied'; return { status }; } });
+    const first = createRewarded({ units: { rewarded: { ios: 'ios-r' } }, test: false }, s.env);
+    const result = first.play({}); await flush(); expect(s.order).toEqual(['consent']);
+    vi.advanceTimersByTime(600); await flush(); expect(s.order).toEqual(['consent', 'att', 'init']); expect(s.made).toHaveLength(1);
+    expect(s.made[0].options.requestNonPersonalizedAdsOnly).toBe(true); first.cancel(); await result;
+  });
+  it.each(['rejection', 'native-error'])('native presentation failure after cancel releases lease with no second terminal: %s', async (kind) => {
+    const s = setup(); const controller = s.normal(); const abort = vi.fn(); const fail = vi.fn();
+    await controller.show({ onAbort: abort, onFail: fail }); let reject!: (error: Error) => void;
+    s.made[0].show = () => new Promise((_, r) => { reject = r; });
+    s.made[0].emit(E.LOADED); controller.cancel(); expect(abort).toHaveBeenCalledTimes(1);
+    if (kind === 'rejection') reject(new Error('native show rejected')); else s.made[0].emit(E.ERROR, { code: 'native' });
+    await flush(); expect(fail).not.toHaveBeenCalled(); expect(s.listeners.size).toBe(0);
+    const next = s.rewarded(); const p = next.play({}); await flush(); expect(s.made).toHaveLength(2); next.cancel(); await p;
+  });
+});
+
 describe('anchored adaptive banner native lifecycle', () => {
   it('only actual LOADED height expands, duplicate load is ignored and failure collapses', async () => {
     const s = setup(); const heights = vi.fn(); const loaded = vi.fn(); const fail = vi.fn();

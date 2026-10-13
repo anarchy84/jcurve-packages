@@ -7,7 +7,7 @@ export type FullscreenCallbacks = {
   onClosed?: () => void;
   onEarned?: () => void;
   onFail: (message: string, noAd: boolean) => void;
-  onAbort?: () => void;
+  onAbort?: (noAd?: boolean) => void;
 };
 
 export function createFullscreen(env: AdsEnv, sdk: any) {
@@ -58,25 +58,25 @@ export function createFullscreen(env: AdsEnv, sdk: any) {
         if (disposed || terminal) return;
         terminal = true;
         stopPreparation();
-        safeCall(cb.onAbort);
+        safeCall(cb.onAbort, !presented && !opened);
         // Native fullscreen cannot be dismissed by JS. Keep its lease until CLOSED/foreground recovery.
-        if (!opened || closed) cleanup();
+        if ((!presented && !opened) || closed) cleanup();
       };
       abortCurrent = abort; // Installed before the very first await; cancel works during UMP/init.
       const fail = (message: string) => {
         if (disposed || terminal || closed) return;
         terminal = true;
         safeCall(config.onFailure);
-        if (!opened) cleanup();
-        safeCall(cb.onFail, message, !opened);
+        if (!presented && !opened) cleanup();
+        safeCall(cb.onFail, message, !presented && !opened);
       };
       const finishClose = () => {
         if (disposed || closed) return;
         closed = true;
         if (terminal) { cleanup(); return; }
+        if (!opened) { terminal = true; cleanup(); safeCall(cb.onFail, '광고가 열렸는지 확인할 수 없어요', !presented); return; }
         safeCall(cb.onClosed);
         if (disposed || terminal) return;
-        if (!opened) { terminal = true; cleanup(); safeCall(cb.onFail, '광고가 열리지 않았어요', true); return; }
         if (!config.rewarded || earned) { terminal = true; cleanup(); return; }
         later(() => {
           if (disposed) return;
@@ -92,7 +92,7 @@ export function createFullscreen(env: AdsEnv, sdk: any) {
           if (state !== 'active') {
             sawBackground = true;
             if (!opened && (state === 'background' || stage !== 'init')) abort();
-          } else if (sawBackground && opened) finishClose();
+          } else if (sawBackground && (presented || opened)) finishClose();
         }) ?? null;
         const prepared = await Promise.race([config.prepare(() => !disposed && !terminal), stopped]);
         if (disposed || terminal || prepared === null) return false;
@@ -104,13 +104,23 @@ export function createFullscreen(env: AdsEnv, sdk: any) {
         offs.push(ad.addAdEventListener(config.rewarded ? rewardEvents.LOADED : events.LOADED, () => {
           if (disposed || terminal || closed || presented) return;
           if (!isForeground(env)) { abort(); return; }
-          presented = true; stage = 'show';
-          try { Promise.resolve(ad.show()).catch((error) => fail(adError(error))); }
-          catch (error) { fail(adError(error)); }
+          presented = true; stage = 'show'; sawBackground = false;
+          const presentationFailed = (error: any) => {
+            if (disposed || closed) return;
+            if (!opened) {
+              presented = false; // Native show rejected; an unconfirmed presentation cannot still open.
+              if (terminal) { cleanup(); return; }
+            }
+            fail(adError(error));
+          };
+          try { Promise.resolve(ad.show()).catch(presentationFailed); }
+          catch (error) { presentationFailed(error); }
         }));
         offs.push(ad.addAdEventListener(events.OPENED, () => {
-          if (disposed || terminal || closed || opened) return;
+          if (disposed || closed || opened) return;
           opened = true; stage = 'open'; sawBackground = false;
+          // cancel/failure may already have delivered its result; still track the native lifecycle.
+          if (terminal) return;
           safeCall(config.onOpen); safeCall(cb.onOpened);
         }));
         if (config.rewarded) offs.push(ad.addAdEventListener(rewardEvents.EARNED_REWARD, () => {
@@ -119,7 +129,14 @@ export function createFullscreen(env: AdsEnv, sdk: any) {
           if (closed) { terminal = true; cleanup(); }
         }));
         offs.push(ad.addAdEventListener(events.CLOSED, finishClose));
-        offs.push(ad.addAdEventListener(events.ERROR, (error: any) => fail(adError(error))));
+        offs.push(ad.addAdEventListener(events.ERROR, (error: any) => {
+          if (disposed || closed) return;
+          if (!opened) {
+            presented = false; // A native failure before OPENED is authoritative noAd.
+            if (terminal) { cleanup(); return; }
+          }
+          fail(adError(error));
+        }));
         if (!isForeground(env)) { abort(); return false; }
         later(() => { if (!opened) fail('광고를 불러오지 못했어요. 잠시 후 다시 시도해 주세요 (' + stage + ')'); }, 15_000);
         ad.load();

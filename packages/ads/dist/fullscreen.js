@@ -60,9 +60,9 @@ function createFullscreen(env, sdk) {
                     return;
                 terminal = true;
                 stopPreparation();
-                (0, runtime_1.safeCall)(cb.onAbort);
+                (0, runtime_1.safeCall)(cb.onAbort, !presented && !opened);
                 // Native fullscreen cannot be dismissed by JS. Keep its lease until CLOSED/foreground recovery.
-                if (!opened || closed)
+                if ((!presented && !opened) || closed)
                     cleanup();
             };
             abortCurrent = abort; // Installed before the very first await; cancel works during UMP/init.
@@ -71,9 +71,9 @@ function createFullscreen(env, sdk) {
                     return;
                 terminal = true;
                 (0, runtime_1.safeCall)(config.onFailure);
-                if (!opened)
+                if (!presented && !opened)
                     cleanup();
-                (0, runtime_1.safeCall)(cb.onFail, message, !opened);
+                (0, runtime_1.safeCall)(cb.onFail, message, !presented && !opened);
             };
             const finishClose = () => {
                 if (disposed || closed)
@@ -83,15 +83,15 @@ function createFullscreen(env, sdk) {
                     cleanup();
                     return;
                 }
-                (0, runtime_1.safeCall)(cb.onClosed);
-                if (disposed || terminal)
-                    return;
                 if (!opened) {
                     terminal = true;
                     cleanup();
-                    (0, runtime_1.safeCall)(cb.onFail, '광고가 열리지 않았어요', true);
+                    (0, runtime_1.safeCall)(cb.onFail, '광고가 열렸는지 확인할 수 없어요', !presented);
                     return;
                 }
+                (0, runtime_1.safeCall)(cb.onClosed);
+                if (disposed || terminal)
+                    return;
                 if (!config.rewarded || earned) {
                     terminal = true;
                     cleanup();
@@ -116,7 +116,7 @@ function createFullscreen(env, sdk) {
                         if (!opened && (state === 'background' || stage !== 'init'))
                             abort();
                     }
-                    else if (sawBackground && opened)
+                    else if (sawBackground && (presented || opened))
                         finishClose();
                 }) ?? null;
                 const prepared = await Promise.race([config.prepare(() => !disposed && !terminal), stopped]);
@@ -139,19 +139,35 @@ function createFullscreen(env, sdk) {
                     }
                     presented = true;
                     stage = 'show';
+                    sawBackground = false;
+                    const presentationFailed = (error) => {
+                        if (disposed || closed)
+                            return;
+                        if (!opened) {
+                            presented = false; // Native show rejected; an unconfirmed presentation cannot still open.
+                            if (terminal) {
+                                cleanup();
+                                return;
+                            }
+                        }
+                        fail((0, runtime_1.adError)(error));
+                    };
                     try {
-                        Promise.resolve(ad.show()).catch((error) => fail((0, runtime_1.adError)(error)));
+                        Promise.resolve(ad.show()).catch(presentationFailed);
                     }
                     catch (error) {
-                        fail((0, runtime_1.adError)(error));
+                        presentationFailed(error);
                     }
                 }));
                 offs.push(ad.addAdEventListener(events.OPENED, () => {
-                    if (disposed || terminal || closed || opened)
+                    if (disposed || closed || opened)
                         return;
                     opened = true;
                     stage = 'open';
                     sawBackground = false;
+                    // cancel/failure may already have delivered its result; still track the native lifecycle.
+                    if (terminal)
+                        return;
                     (0, runtime_1.safeCall)(config.onOpen);
                     (0, runtime_1.safeCall)(cb.onOpened);
                 }));
@@ -167,7 +183,18 @@ function createFullscreen(env, sdk) {
                         }
                     }));
                 offs.push(ad.addAdEventListener(events.CLOSED, finishClose));
-                offs.push(ad.addAdEventListener(events.ERROR, (error) => fail((0, runtime_1.adError)(error))));
+                offs.push(ad.addAdEventListener(events.ERROR, (error) => {
+                    if (disposed || closed)
+                        return;
+                    if (!opened) {
+                        presented = false; // A native failure before OPENED is authoritative noAd.
+                        if (terminal) {
+                            cleanup();
+                            return;
+                        }
+                    }
+                    fail((0, runtime_1.adError)(error));
+                }));
                 if (!(0, runtime_1.isForeground)(env)) {
                     abort();
                     return false;

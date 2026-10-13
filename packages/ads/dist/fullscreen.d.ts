@@ -5,7 +5,7 @@ export type FullscreenCallbacks = {
     onClosed?: () => void;
     onEarned?: () => void;
     onFail: (message: string, noAd: boolean) => void;
-    onAbort?: () => void;
+    onAbort?: (noAd?: boolean) => void;
 };
 export declare function createFullscreen(env: AdsEnv, sdk: any): {
     cancel: () => void;

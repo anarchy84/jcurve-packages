@@ -95,7 +95,7 @@ export type PlayResult = {
   opened: boolean;
   /** 이미 다른 광고가 도는 중이라 시작하지 못했다(횟수도 깎지 않는다) */
   busy: boolean;
-  /** 열리지도 않았다(재고 없음 · 로드 실패 · 시간 초과 · 그만두기) — 「다시 시도」 안내 */
+  /** 표시 요청 전 실패/취소 또는 네이티브 실패로 안 열렸음을 확인했다. 표시 중 미확정 상태는 false. */
   noAd: boolean;
   /** 못 봤을 때 보여 줄 문구 */
   message?: string;
@@ -347,8 +347,7 @@ export function createRewarded(opts: AdsOptions, env: AdsEnv = defaultAdsEnv()):
     return fullscreen.show({
       callbacks: o,
       rewarded: true,
-      prepare: async (stillNeeded) => {
-        const request = await prepareRequest(env, mod, opts, stillNeeded);
+      prepare: (stillNeeded) => prepareRequest(env, mod, opts, stillNeeded, async () => {
         // Preserve automatic ATT, sequentially after UMP (never overlapping two forms).
         if (os === 'ios') {
           const att = env.tracking();
@@ -359,8 +358,7 @@ export function createRewarded(opts: AdsOptions, env: AdsEnv = defaultAdsEnv()):
             if (tracking.timedOut) throw new Error('추적 권한 확인이 아직 끝나지 않았어요');
           }
         }
-        return request;
-      },
+      }),
       makeAd: (request) => makeAd(request, o.userId, o.customData, interstitial),
       onOpen: () => { noteAdOpen(); try { tiktok?.adImpression(); } catch { /* noop */ } },
       onFailure: () => { if (!interstitial) noteAdFail(); },
@@ -384,7 +382,7 @@ export function createRewarded(opts: AdsOptions, env: AdsEnv = defaultAdsEnv()):
       onClosed: () => { closed = true; if (earned) finish({ earned: true, opened: true, busy: false, noAd: false }); },
       onFail: (message: string, noAd: boolean) => finish({ earned: false, opened, busy: false, noAd: !!noAd, message }),
       // 그만두기 · 걸림 풀기 — 이미 보상이 왔으면 본 것으로(서버 SSV 는 그대로 온다)
-      onAbort: () => finish(earned ? { earned: true, opened, busy: false, noAd: false } : { earned: false, opened, busy: false, noAd: !opened, message: '광고를 그만뒀어요' }),
+      onAbort: (noAd?: boolean) => finish(earned ? { earned: true, opened, busy: false, noAd: false } : { earned: false, opened, busy: false, noAd: noAd ?? !opened, message: '광고를 그만뒀어요' }),
     }).then((started) => {
       if (!started && !done) finish({ earned: false, opened: false, busy: true, noAd: false });
     }, () => finish({ earned: false, opened, busy: false, noAd: !opened, message: '광고를 열지 못했어요' }));

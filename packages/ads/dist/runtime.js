@@ -36,7 +36,7 @@ function bounded(promise, ms, message) {
     });
 }
 /** Failed UMP refresh may use a still-valid previous consent, never a fabricated one. */
-async function prepareRequest(env, sdk, policy, stillNeeded = () => true) {
+async function prepareRequest(env, sdk, policy, stillNeeded = () => true, beforeInitialize) {
     const check = () => {
         if (!stillNeeded())
             throw new Error('광고를 그만뒀어요');
@@ -74,6 +74,11 @@ async function prepareRequest(env, sdk, policy, stillNeeded = () => true) {
         throw new Error('광고 요청에 필요한 동의가 없어요');
     }
     check();
+    // Manual ATT follows UMP and precedes the first SDK initialization/request.
+    if (beforeInitialize) {
+        await beforeInitialize();
+        check();
+    }
     let nonPersonalized = true;
     if (policy.requestNonPersonalizedAdsOnly === false) {
         try {

@@ -35,7 +35,7 @@ function createInterstitial(options, env = (0, ads_1.defaultAdsEnv)()) {
             onClosed: () => { if (opened)
                 finish({ opened: true, busy: false, noAd: false, cancelled: false }); },
             onFail: (message, noAd) => finish({ opened, busy: false, noAd, cancelled: false, message }),
-            onAbort: () => finish({ opened, busy: false, noAd: !opened, cancelled: true, message: '광고를 그만뒀어요' }),
+            onAbort: (noAd) => finish({ opened, busy: false, noAd: noAd ?? !opened, cancelled: true, message: '광고를 그만뒀어요' }),
         }).then((started) => {
             if (!started && !done)
                 finish({ opened: false, busy: true, noAd: false, cancelled: false });

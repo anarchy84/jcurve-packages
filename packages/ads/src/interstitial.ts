@@ -13,6 +13,7 @@ export type InterstitialShowOptions = {
 export type InterstitialResult = {
   opened: boolean;
   busy: boolean;
+  /** true only when absence is confirmed; in-flight native presentation is false even without OPENED. */
   noAd: boolean;
   cancelled: boolean;
   message?: string;
@@ -50,7 +51,7 @@ export function createInterstitial(options: InterstitialOptions, env: AdsEnv = d
       onOpened: () => { opened = true; safeCall(options.onOpened); },
       onClosed: () => { if (opened) finish({ opened: true, busy: false, noAd: false, cancelled: false }); },
       onFail: (message, noAd) => finish({ opened, busy: false, noAd, cancelled: false, message }),
-      onAbort: () => finish({ opened, busy: false, noAd: !opened, cancelled: true, message: '광고를 그만뒀어요' }),
+      onAbort: (noAd?: boolean) => finish({ opened, busy: false, noAd: noAd ?? !opened, cancelled: true, message: '광고를 그만뒀어요' }),
     }).then((started) => {
       if (!started && !done) finish({ opened: false, busy: true, noAd: false, cancelled: false });
     }, () => finish({ opened, busy: false, noAd: !opened, cancelled: false, message: '광고를 열지 못했어요' }));

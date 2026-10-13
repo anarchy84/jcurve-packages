@@ -44,7 +44,7 @@ export function bounded<T>(promise: Promise<T>, ms: number, message: string): Pr
 }
 
 /** Failed UMP refresh may use a still-valid previous consent, never a fabricated one. */
-export async function prepareRequest(env: AdsEnv, sdk: any, policy: RequestPolicy, stillNeeded: () => boolean = () => true): Promise<RequestPrivacy> {
+export async function prepareRequest(env: AdsEnv, sdk: any, policy: RequestPolicy, stillNeeded: () => boolean = () => true, beforeInitialize?: () => Promise<void>): Promise<RequestPrivacy> {
   const check = () => {
     if (!stillNeeded()) throw new Error('광고를 그만뒀어요');
     if (!isForeground(env)) throw new Error('앱이 앞에 있을 때 광고를 요청할 수 있어요');
@@ -73,6 +73,8 @@ export async function prepareRequest(env: AdsEnv, sdk: any, policy: RequestPolic
   const info = await bounded(Promise.resolve(consent.getConsentInfo()), 5000, '광고 동의를 확인할 수 없어요');
   if (info?.canRequestAds !== true) { session.consent = null; throw new Error('광고 요청에 필요한 동의가 없어요'); }
   check();
+  // Manual ATT follows UMP and precedes the first SDK initialization/request.
+  if (beforeInitialize) { await beforeInitialize(); check(); }
   let nonPersonalized = true;
   if (policy.requestNonPersonalizedAdsOnly === false) {
     try {

@@ -16,6 +16,6 @@ export declare function isForeground(env: AdsEnv): boolean;
 export declare function acquireFullscreen(env: AdsEnv, sdk: any): FullscreenLease | null;
 export declare function bounded<T>(promise: Promise<T>, ms: number, message: string): Promise<T>;
 /** Failed UMP refresh may use a still-valid previous consent, never a fabricated one. */
-export declare function prepareRequest(env: AdsEnv, sdk: any, policy: RequestPolicy, stillNeeded?: () => boolean): Promise<RequestPrivacy>;
+export declare function prepareRequest(env: AdsEnv, sdk: any, policy: RequestPolicy, stillNeeded?: () => boolean, beforeInitialize?: () => Promise<void>): Promise<RequestPrivacy>;
 export declare function safeCall(fn: ((...args: any[]) => void) | undefined, ...args: any[]): void;
 export declare function adError(error: any): string;
