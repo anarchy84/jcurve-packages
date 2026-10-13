@@ -1,7 +1,7 @@
 {
   "name": "@jcurve/mission",
-  "version": "0.1.0",
-  "description": "APIHUB 일주일 방문미션 공용 — 웹뷰 열기 · MocationNativeBridge(openAppTarget) · 주소 차단 규칙 · 에러 화면",
+  "version": "0.2.0",
+  "description": "공용 미션 카드 페이지 · 쇼핑 미션 화면 · APIHUB 웹뷰와 브릿지",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [

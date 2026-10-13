@@ -17,7 +17,7 @@ const LOAD_TIMEOUT_MS = 20000;
 const MAX_RECOVER = 2;
 const nonceOf = () => Math.random().toString(36).slice(2) + Date.now().toString(36) + Math.random().toString(36).slice(2);
 /** 주소가 바뀌었거나 다시 시도할 때마다 상태를 처음부터 */
-function MissionWebView({ url, theme = states_1.DEFAULT_THEME, onClose, onEvent, onFloatingPopup, onOverlayRequest, overlayReady = false }) {
+function MissionWebView({ url, theme = states_1.DEFAULT_THEME, onClose, onEvent, onFloatingPopup, onOverlayRequest, overlayReady = false, onNavigationChange }) {
     const valid = (0, entry_1.isEntryUrl)(url);
     const [state, setState] = (0, react_1.useState)('loading');
     const [retryKey, setRetryKey] = (0, react_1.useState)(0); // 사용자가 다시 시도(처음부터)
@@ -30,6 +30,13 @@ function MissionWebView({ url, theme = states_1.DEFAULT_THEME, onClose, onEvent,
     const failedRef = (0, react_1.useRef)(false);
     const stateRef = (0, react_1.useRef)('loading');
     const canGoBack = (0, react_1.useRef)(false);
+    const navigationCallback = (0, react_1.useRef)(onNavigationChange);
+    navigationCallback.current = onNavigationChange;
+    const updateNavigation = (0, react_1.useCallback)((back) => {
+        canGoBack.current = back;
+        navigationCallback.current?.({ canGoBack: back, goBack: () => { if (canGoBack.current)
+                handle.current?.goBack(); } });
+    }, []);
     const platform = react_native_1.Platform.OS === 'ios' ? 'ios' : 'android';
     const shim = (0, react_1.useMemo)(() => (0, shim_1.bridgeShim)(platform, overlayReady, secret), [platform, overlayReady, secret]);
     const setSt = (0, react_1.useCallback)((v) => { stateRef.current = v; setState(v); }, []);
@@ -46,10 +53,10 @@ function MissionWebView({ url, theme = states_1.DEFAULT_THEME, onClose, onEvent,
     const fail = (0, react_1.useCallback)((kind, why) => {
         failedRef.current = true;
         disarm();
-        canGoBack.current = false; // 오류 화면에서는 웹 히스토리로 뒤로 가지 않는다 — 뒤로 가기는 닫기
+        updateNavigation(false); // 오류 화면에서는 웹 히스토리로 뒤로 가지 않는다 — 뒤로 가기는 닫기
         setSt(kind);
         onEvent?.('mission_error', { kind, ...why });
-    }, [disarm, onEvent, setSt]);
+    }, [disarm, onEvent, setSt, updateNavigation]);
     // 로드(첫 로드 · 웹뷰 안 이동 · reload)가 시작될 때마다 시간 제한을 다시 건다
     const arm = (0, react_1.useCallback)(() => {
         if (loadedTimer.current) {
@@ -64,7 +71,7 @@ function MissionWebView({ url, theme = states_1.DEFAULT_THEME, onClose, onEvent,
     (0, react_1.useEffect)(() => {
         recovered.current = 0;
         failedRef.current = false;
-        canGoBack.current = false;
+        updateNavigation(false);
         setSt('loading');
         if (!valid) {
             fail('error', { why: 'bad_url' });
@@ -100,6 +107,7 @@ function MissionWebView({ url, theme = states_1.DEFAULT_THEME, onClose, onEvent,
             return;
         }
         failedRef.current = false;
+        updateNavigation(false);
         arm();
         if (reload)
             handle.current?.reload();
@@ -137,7 +145,7 @@ function MissionWebView({ url, theme = states_1.DEFAULT_THEME, onClose, onEvent,
         return (0, jsx_runtime_1.jsx)(states_1.MissionState, { kind: "error", theme: theme, onClose: onClose });
     return (0, jsx_runtime_1.jsxs)(react_native_1.View, { style: { flex: 1, backgroundColor: theme.bg }, children: [(0, jsx_runtime_1.jsx)(WebView, { ref: handle, source: { uri: url }, 
                 // 모든 요청이 onShouldStartLoadWithRequest 를 거치게 한다(비 https 가 라이브러리 기본 처리로 빠져 우리 규칙을 건너뛰지 않게) — 거르는 건 아래 규칙
-                originWhitelist: ['*'], injectedJavaScriptBeforeContentLoaded: shim, injectedJavaScriptBeforeContentLoadedForMainFrameOnly: true, injectedJavaScriptForMainFrameOnly: true, onMessage: onMessage, javaScriptEnabled: true, domStorageEnabled: true, sharedCookiesEnabled: true, thirdPartyCookiesEnabled: true, allowFileAccess: false, allowsInlineMediaPlayback: true, javaScriptCanOpenWindowsAutomatically: false, setSupportMultipleWindows: false, setBuiltInZoomControls: false, allowsBackForwardNavigationGestures: true, onNavigationStateChange: s => { canGoBack.current = s.canGoBack && !failedRef.current; }, onLoadStart: () => { failedRef.current = false; if (stateRef.current === 'loading' || stateRef.current === 'ok')
+                originWhitelist: ['*'], injectedJavaScriptBeforeContentLoaded: shim, injectedJavaScriptBeforeContentLoadedForMainFrameOnly: true, injectedJavaScriptForMainFrameOnly: true, onMessage: onMessage, javaScriptEnabled: true, domStorageEnabled: true, sharedCookiesEnabled: true, thirdPartyCookiesEnabled: true, allowFileAccess: false, allowsInlineMediaPlayback: true, javaScriptCanOpenWindowsAutomatically: false, setSupportMultipleWindows: false, setBuiltInZoomControls: false, allowsBackForwardNavigationGestures: true, onNavigationStateChange: s => { updateNavigation(s.canGoBack && !failedRef.current); }, onLoadStart: () => { failedRef.current = false; if (stateRef.current === 'loading' || stateRef.current === 'ok')
                     arm(); }, 
                 // Android 는 네트워크 오류에서도 onLoad 를 먼저 보내고 onError 가 뒤따른다 — 짧게 기다려 오류가 안 왔을 때만 성공으로 센다
                 onLoad: () => {
